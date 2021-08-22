@@ -5,10 +5,9 @@
 #include <GLFW/glfw3.h>
 #include <cstdlib>
 #include <iostream>
-
-#include "sys_callbacks.h"
 #include "loaders.h"
 #include "graphics/gpu_program.h"
+#include "input.h"
 
 #define BUFFER_OFFSET(a) ((void*)(a))
 
@@ -21,8 +20,14 @@ GLuint  Buffers[NumBuffers];
 
 const GLuint  NumVertices = 6;
 
+Input input;
 float g_ScreenRatio;
 
+void ErrorCallback(int error, const char* description);
+void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mode);
+void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+void CursorPosCallback(GLFWwindow* window, double xpos, double ypos);
+void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 void FramebufferSizeCallback(GLFWwindow* window, int width, int height);
 
 int main( int argc, char** argv )
@@ -54,6 +59,10 @@ int main( int argc, char** argv )
     std::exit(EXIT_FAILURE);
   }
   
+  glfwSetKeyCallback(window, KeyCallback);
+  glfwSetMouseButtonCallback(window, MouseButtonCallback);
+  glfwSetCursorPosCallback(window, CursorPosCallback);
+  glfwSetScrollCallback(window, ScrollCallback);
   glfwSetFramebufferSizeCallback(window, FramebufferSizeCallback);
   glfwSetWindowSize(window, 800, 600);
 
@@ -73,51 +82,82 @@ int main( int argc, char** argv )
   // glCullFace(GL_BACK);
   // glFrontFace(GL_CCW);
 
-    glGenVertexArrays(NumVAOs, VAOs);
+  glGenVertexArrays(NumVAOs, VAOs);
+  glBindVertexArray(VAOs[Triangles]);
+
+  GLfloat  vertices[NumVertices][2] = {
+      { -0.90f, -0.90f }, {  0.85f, -0.90f }, { -0.90f,  0.85f },  // Triangle 1
+      {  0.90f, -0.85f }, {  0.90f,  0.90f }, { -0.85f,  0.90f }   // Triangle 2
+  };
+
+  glCreateBuffers(NumBuffers, Buffers);
+  glBindBuffer(GL_ARRAY_BUFFER, Buffers[ArrayBuffer]);
+  glBufferStorage(GL_ARRAY_BUFFER, sizeof(vertices), vertices, 0);
+
+  GpuProgram program = GpuProgram();
+  program.shader_files = 
+  {
+    { GL_VERTEX_SHADER, "res/shaders/triangles.vs" },
+    { GL_FRAGMENT_SHADER, "res/shaders/triangles.fs" },
+  };
+  CreateGpuProgram(&program);
+  if (program.program_id == 0) {
+    std::cerr << "Linking failed" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+  glUseProgram(program.program_id);
+
+  glVertexAttribPointer(vPosition, 2, GL_FLOAT, GL_FALSE, 0, BUFFER_OFFSET(0));
+  glEnableVertexAttribArray(vPosition);
+
+  while (!glfwWindowShouldClose(window))
+  {
+    static const float black[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+    glClearBufferfv(GL_COLOR, 0, black);
+
     glBindVertexArray(VAOs[Triangles]);
+    glDrawArrays(GL_TRIANGLES, 0, NumVertices);
 
-    GLfloat  vertices[NumVertices][2] = {
-        { -0.90f, -0.90f }, {  0.85f, -0.90f }, { -0.90f,  0.85f },  // Triangle 1
-        {  0.90f, -0.85f }, {  0.90f,  0.90f }, { -0.85f,  0.90f }   // Triangle 2
-    };
+    glfwSwapBuffers(window);
+    glfwPollEvents();
 
-    glCreateBuffers(NumBuffers, Buffers);
-    glBindBuffer(GL_ARRAY_BUFFER, Buffers[ArrayBuffer]);
-    glBufferStorage(GL_ARRAY_BUFFER, sizeof(vertices), vertices, 0);
+    if (input.GetKeyState(GLFW_KEY_ESCAPE).is_pressed)
+      glfwSetWindowShouldClose(window, GL_TRUE);
+  }
 
-    GpuProgram program = GpuProgram();
-    program.shader_files = 
-    {
-      { GL_VERTEX_SHADER, "res/shaders/triangles.vs" },
-      { GL_FRAGMENT_SHADER, "res/shaders/triangles.fs" },
-    };
-    CreateGpuProgram(&program);
-    if (program.program_id == 0) {
-      std::cerr << "Linking failed" << std::endl;
-      std::exit(EXIT_FAILURE);
-    }
-    glUseProgram(program.program_id);
+  glfwDestroyWindow(window);
 
-    glVertexAttribPointer(vPosition, 2, GL_FLOAT,
-        GL_FALSE, 0, BUFFER_OFFSET(0));
-    glEnableVertexAttribArray(vPosition);
+  glfwTerminate();
+}
 
-    while (!glfwWindowShouldClose(window))
-    {
-        static const float black[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+void ErrorCallback(int error, const char* description) 
+{
+  fprintf(stderr, "ERROR: GLFW: %s\n", description);
+}
 
-        glClearBufferfv(GL_COLOR, 0, black);
+void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mod)
+{
+  input.KeyCallback(key, action, mod);
+}
 
-        glBindVertexArray(VAOs[Triangles]);
-        glDrawArrays(GL_TRIANGLES, 0, NumVertices);
+void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
+{
+  input.KeyCallback(button, action, mods);
+}
 
-        glfwSwapBuffers(window);
-        glfwPollEvents();
-    }
+void CursorPosCallback(GLFWwindow* window, double xpos, double ypos)
+{
+  input.cursor_state.xvalue = xpos;
+  input.cursor_state.yvalue = ypos;
+  input.cursor_changed = true;
+}
 
-    glfwDestroyWindow(window);
-
-    glfwTerminate();
+void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+{
+  input.scroll_state.xvalue = xoffset;
+  input.scroll_state.yvalue = yoffset;
+  input.scroll_changed = true;
 }
 
 void FramebufferSizeCallback(GLFWwindow* window, int width, int height)
