@@ -1,0 +1,7 @@
+bin
+build
+lib/glfw/docs
+lib/glfw/examples
+lib/glfw/tests
+lib/glfw/CMake
+lib/glfw/deps
