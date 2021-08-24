@@ -16,9 +16,9 @@ void Camera::MoveLockedCamera()
 glm::mat4 Camera::Camera_View()
 {
   if (free) {
-    glm::mat4 view = glm::rotate(glm::mat4(), yaw, glm::vec3(1, 0, 0));
-    view = glm::rotate(view, pitch, up_vector);
-    return glm::inverse(view);
+    glm::mat4 view = glm::translate(-position);
+    view = glm::rotate(view, yaw, glm::vec3(-1, 0, 0));
+    return glm::rotate(view, pitch, up_vector);
   }
   else {
     return glm::lookAt(position, lookat, up_vector);
@@ -41,5 +41,5 @@ glm::mat4 Camera::Camera_Projection()
 
 glm::mat4 Camera::Camera_ViewProj()
 {
-  return Camera_View() * Camera_Projection();
+  return Camera_Projection() * Camera_View();
 }

@@ -1,27 +1,27 @@
 
 #include <GL3/gl3.h>
 #include <GL3/gl3w.h>
-
 #include <GLFW/glfw3.h>
+
+#include <glm/gtc/type_ptr.hpp>
+#include <glm/mat4x4.hpp>
+#include <glm/vec4.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <cstdlib>
 #include <iostream>
-#include "loaders.h"
 #include "graphics/gpu_program.h"
+#include "graphics/model.h"
+#include "graphics/camera.h"
 #include "input.h"
+#include "scene.h"
 
-#define BUFFER_OFFSET(a) ((void*)(a))
-
-enum VAO_IDs { Triangles, NumVAOs };
-enum Buffer_IDs { ArrayBuffer, NumBuffers };
-enum Attrib_IDs { vPosition = 0 };
-
-GLuint  VAOs[NumVAOs];
-GLuint  Buffers[NumBuffers];
-
-const GLuint  NumVertices = 6;
-
+Camera camera;
 Input input;
+scene_object_t current_scene;
 float g_ScreenRatio;
+double g_LastCursorPosX, g_LastCursorPosY;
 
 void ErrorCallback(int error, const char* description);
 void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mode);
@@ -63,11 +63,13 @@ int main( int argc, char** argv )
   glfwSetMouseButtonCallback(window, MouseButtonCallback);
   glfwSetCursorPosCallback(window, CursorPosCallback);
   glfwSetScrollCallback(window, ScrollCallback);
+
   glfwSetFramebufferSizeCallback(window, FramebufferSizeCallback);
   glfwSetWindowSize(window, 800, 600);
+  g_ScreenRatio = 4.0f/3.0f;
 
   glfwMakeContextCurrent(window);
-  // Não sei pq tem essa linha
+
   gl3wInit();
   
   const GLubyte *vendor      = glGetString(GL_VENDOR);
@@ -77,27 +79,13 @@ int main( int argc, char** argv )
 
   printf("GPU: %s, %s, OpenGL %s, GLSL %s\n", vendor, renderer, glversion, glslversion);
 
-  // glEnable(GL_DEPTH_TEST); // Configurações importantes
-  // glEnable(GL_CULL_FACE);
-  // glCullFace(GL_BACK);
-  // glFrontFace(GL_CCW);
-
-  glGenVertexArrays(NumVAOs, VAOs);
-  glBindVertexArray(VAOs[Triangles]);
-
-  GLfloat  vertices[NumVertices][2] = {
-      { -0.90f, -0.90f }, {  0.85f, -0.90f }, { -0.90f,  0.85f },  // Triangle 1
-      {  0.90f, -0.85f }, {  0.90f,  0.90f }, { -0.85f,  0.90f }   // Triangle 2
-  };
-
-  glCreateBuffers(NumBuffers, Buffers);
-  glBindBuffer(GL_ARRAY_BUFFER, Buffers[ArrayBuffer]);
-  glBufferStorage(GL_ARRAY_BUFFER, sizeof(vertices), vertices, 0);
+  model_t cube = ReadModelFile("res/models/cube.in");
+  AddModelToScene(&current_scene, cube);
 
   GpuProgram program = GpuProgram();
   program.shader_files = 
   {
-    { GL_VERTEX_SHADER, "res/shaders/triangles.vs" },
+    { GL_VERTEX_SHADER, "res/shaders/default.vs" },
     { GL_FRAGMENT_SHADER, "res/shaders/triangles.fs" },
   };
   CreateGpuProgram(&program);
@@ -105,19 +93,36 @@ int main( int argc, char** argv )
     std::cerr << "Linking failed" << std::endl;
     std::exit(EXIT_FAILURE);
   }
-  glUseProgram(program.program_id);
 
-  glVertexAttribPointer(vPosition, 2, GL_FLOAT, GL_FALSE, 0, BUFFER_OFFSET(0));
-  glEnableVertexAttribArray(vPosition);
+  camera.position = glm::vec3(-1.5f, 2.0f, -4.0f);
+  camera.free = false;
+
+  glEnable(GL_DEPTH_TEST);
+  glEnable(GL_CULL_FACE);
+  glCullFace(GL_BACK);
+  glFrontFace(GL_CCW);
 
   while (!glfwWindowShouldClose(window))
   {
-    static const float black[] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    static const float black[] = { 0.3f, 0.3f, 0.3f, 1.0f };
 
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glClearBufferfv(GL_COLOR, 0, black);
 
-    glBindVertexArray(VAOs[Triangles]);
-    glDrawArrays(GL_TRIANGLES, 0, NumVertices);
+    camera.screen_ratio = g_ScreenRatio;
+    glm::mat4 view = camera.Camera_View();
+    glm::mat4 model = glm::mat4(1.0f);
+    glm::mat4 mvp = camera.Camera_ViewProj() * model;
+
+    glUseProgram(program.program_id);
+    glUniformMatrix4fv(program.model_view_proj_uniform, 
+        1 , GL_FALSE , glm::value_ptr(mvp));
+    glUniformMatrix4fv(program.view_uniform, 
+        1 , GL_FALSE , glm::value_ptr(view));
+    glUniformMatrix4fv(program.model_uniform, 
+        1 , GL_FALSE , glm::value_ptr(model));
+
+    DrawVirtualObject(current_scene, program.program_id);
 
     glfwSwapBuffers(window);
     glfwPollEvents();
@@ -133,7 +138,7 @@ int main( int argc, char** argv )
 
 void ErrorCallback(int error, const char* description) 
 {
-  fprintf(stderr, "ERROR: GLFW: %s\n", description);
+  std::cerr << "ERROR: GLFW: " << description << std::endl;
 }
 
 void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mod)

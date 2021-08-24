@@ -18,6 +18,8 @@ class GpuProgram {
     std::list<ShaderInfo> shader_files;
     unsigned int program_id;
     int model_view_proj_uniform;
+    int model_uniform;
+    int view_uniform;
 };
 
 void CreateGpuProgram(GpuProgram* gpu_program);

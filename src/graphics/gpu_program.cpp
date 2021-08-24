@@ -89,9 +89,9 @@ void CompileShader(const char* filename, unsigned int shader_id)
   const int   shader_string_length = static_cast<int>( file_string.length() );
 
   glShaderSource(shader_id, 1, &shader_string, &shader_string_length);
-  delete [] shader_string;
+  // delete [] shader_string;
   glCompileShader(shader_id);
-  
+
   int compiled_status = PrintGLSL_Logs(filename, shader_id);
   
   if (!compiled_status) {
@@ -102,7 +102,7 @@ void CompileShader(const char* filename, unsigned int shader_id)
 void LoadShader(ShaderInfo* shader)
 {
   unsigned int shader_id = glCreateShader(shader->type);
-  
+
   try {
     CompileShader(shader->filename, shader_id);
   } catch ( std::exception& e ) {
@@ -121,7 +121,7 @@ void LoadShaderFiles(std::list<ShaderInfo>* shaders)
 
     LoadShader(shader);
 
-    it++;
+    ++it;
   }
 }
 
@@ -134,6 +134,10 @@ void CreateGpuProgram(GpuProgram* gpu_program)
 
   LinkGpuProgram(gpu_program);
 
-  gpu_program->model_view_proj_uniform 
+  gpu_program->model_view_proj_uniform
     = glGetUniformLocation(gpu_program->program_id, "model_view_proj");
+  gpu_program->view_uniform
+    = glGetUniformLocation(gpu_program->program_id, "view");
+  gpu_program->model_uniform
+    = glGetUniformLocation(gpu_program->program_id, "model");
 }
