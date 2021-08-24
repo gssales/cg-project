@@ -1,10 +1,5 @@
 bin
 build
-<<<<<<< HEAD
 lib/glfw/docs
 lib/glfw/examples
-lib/glfw/tests
-lib/glfw/CMake
-=======
->>>>>>> bb4afa4c91e5beaf917e1aba012fb0ad55cda062
 .vscode
