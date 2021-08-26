@@ -20,6 +20,7 @@ class GpuProgram {
     int model_view_proj_uniform;
     int model_uniform;
     int view_uniform;
+    int color_uniform;
 };
 
 void CreateGpuProgram(GpuProgram* gpu_program);

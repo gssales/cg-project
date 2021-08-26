@@ -48,6 +48,13 @@ model_t ReadModelFile(const char* filename)
       float vx, vy, vz, nx, ny, nz;
       int color_index;
       file >> str >> vx >> vy >> vz >> nx >> ny >> nz >> color_index;
+    
+      model.bounding_box_min.x = std::min(model.bounding_box_min.x, vx);
+      model.bounding_box_min.y = std::min(model.bounding_box_min.y, vy);
+      model.bounding_box_min.z = std::min(model.bounding_box_min.z, vz);
+      model.bounding_box_max.x = std::max(model.bounding_box_max.x, vx);
+      model.bounding_box_max.y = std::max(model.bounding_box_max.y, vy);
+      model.bounding_box_max.z = std::max(model.bounding_box_max.z, vz);
 
       model.vertices.push_back(vx);
       model.vertices.push_back(vy);

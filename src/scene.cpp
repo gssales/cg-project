@@ -6,6 +6,9 @@ void AddModelToScene(scene_object_t *obj, model_t model)
   glGenVertexArrays(1, &vertex_array_object_id);
   glBindVertexArray(vertex_array_object_id);
     
+  obj->model_space = glm::mat4(1.0f);
+  obj->bounding_box_max = model.bounding_box_max;
+  obj->bounding_box_min = model.bounding_box_min;
   obj->name           = model.model_name;
   obj->first_index    = 0; // Primeiro índice
   obj->vertex_count    = model.vertices.size() / 4; // Número de indices

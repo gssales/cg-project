@@ -140,4 +140,6 @@ void CreateGpuProgram(GpuProgram* gpu_program)
     = glGetUniformLocation(gpu_program->program_id, "view");
   gpu_program->model_uniform
     = glGetUniformLocation(gpu_program->program_id, "model");
+  gpu_program->color_uniform
+    = glGetUniformLocation(gpu_program->program_id, "color");
 }
