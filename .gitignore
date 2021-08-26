@@ -3,3 +3,6 @@ build
 lib/glfw/docs
 lib/glfw/examples
 .vscode
+
+*.pdf
+*.zip

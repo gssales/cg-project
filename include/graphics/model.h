@@ -1,10 +1,12 @@
 #ifndef _MODEL_H
 #define _MODEL_H
 
+#include <algorithm>
 #include <vector>
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <glm/vec3.hpp>
 
 typedef struct {
   float ambient[3];
@@ -21,6 +23,8 @@ typedef struct {
   std::vector<float> face_normals;
   std::vector<unsigned int> color_indices;
   std::vector<unsigned int> indices;
+  glm::vec3    bounding_box_min = glm::vec3(0.0f);
+  glm::vec3    bounding_box_max = glm::vec3(0.0f);
 } model_t;
 
 model_t ReadModelFile(const char* filename);

@@ -3,12 +3,17 @@
 
 #include <GL3/gl3.h>
 #include <GL3/gl3w.h>
+#include <glm/mat4x4.hpp>
+#include <glm/vec3.hpp>
 #include <map>
 
 #include "graphics/model.h"
 
 typedef struct
 {
+  glm::mat4 model_space = glm::mat4(1.0f);
+  glm::vec3    bounding_box_min;
+  glm::vec3    bounding_box_max;
   std::string  name;        // Nome do objeto
   size_t       first_index; // Índice do primeiro vértice dentro do vetor indices[] definido em BuildTrianglesAndAddToVirtualScene()
   size_t       vertex_count; // Número de índices do objeto dentro do vetor indices[] definido em BuildTrianglesAndAddToVirtualScene()

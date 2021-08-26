@@ -1,24 +1,24 @@
 #include "graphics/camera.h"
 
-void Camera::MoveLockedCamera()
+void Camera::Update()
 {
-  if (!free)
+  glm::vec3 target;
+  if (camera_view == LOOK_FREE) 
   {
-    float r = distance;
-    float y = r*sin(pitch);
-    float z = r*cos(pitch)*cos(yaw);
-    float x = r*cos(pitch)*sin(yaw);
-
-    position = lookat + glm::vec3(x, y, z);
+    target = position + view_vector;
   }
+  if (camera_view == LOOK_AT)
+  {
+    target = lookat;
+  }
+    
+  camera_space = glm::lookAt(position, target, up_vector);
 }
 
 glm::mat4 Camera::Camera_View()
 {
-  if (free) {
-    glm::mat4 view = glm::translate(-position);
-    view = glm::rotate(view, yaw, glm::vec3(-1, 0, 0));
-    return glm::rotate(view, pitch, up_vector);
+  if (camera_view == LOOK_FREE) {
+    return glm::lookAt(position, position + view_vector, up_vector);
   }
   else {
     return glm::lookAt(position, lookat, up_vector);
@@ -27,7 +27,8 @@ glm::mat4 Camera::Camera_View()
 
 glm::mat4 Camera::Camera_Projection()
 {
-  if (perspective) {
+  if (projection == PERSPECTIVE) 
+  {
     return glm::perspective(field_of_view, screen_ratio, nearplane, farplane);
   }
   else {
@@ -42,4 +43,16 @@ glm::mat4 Camera::Camera_Projection()
 glm::mat4 Camera::Camera_ViewProj()
 {
   return Camera_Projection() * Camera_View();
+}
+
+void Camera::Rotate(float pitch, float yaw)
+{
+  total_pitch = glm::clamp(total_pitch + pitch, min_pitch, max_pitch);
+  total_yaw += yaw;
+  view_vector = glm::rotate(total_yaw, Y_AXIS) * glm::rotate(total_pitch, X_AXIS) * FORWARD4;
+}
+
+void Camera::Move(glm::vec3 move)
+{
+  position += move;
 }
