@@ -1,4 +1,8 @@
 
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_glfw.h"
+#include "imgui/imgui_impl_opengl3.h"
+
 #include <GL3/gl3.h>
 #include <GL3/gl3w.h>
 #include <GLFW/glfw3.h>
@@ -30,7 +34,9 @@ void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
 void FramebufferSizeCallback(GLFWwindow* window, int width, int height);
 
 void InitGLFW();
-void CreateGLFWwindow(GLFWwindow *window, int width, int height, const char* title);
+GLFWwindow* CreateGLFWwindow(int width, int height, const char* title);
+
+ImGuiIO* InitImgui(GLFWwindow* window);
 
 void UpdateMouseMove(double dt);
 void UpdateMoveCamera(double dt);
@@ -84,12 +90,10 @@ int main( int argc, char* argv[] )
     std::exit(0);
   }
 
+  InitGLFW();
   double last_time = glfwGetTime();
 
-  InitGLFW();
-
-  GLFWwindow* window;
-  CreateGLFWwindow(window, 400, 400, "Model");
+  GLFWwindow* window = CreateGLFWwindow(400, 400, "Model");
 
   gl3wInit();
   
@@ -98,6 +102,8 @@ int main( int argc, char* argv[] )
   const GLubyte *glversion   = glGetString(GL_VERSION);
   const GLubyte *glslversion = glGetString(GL_SHADING_LANGUAGE_VERSION);
   printf("GPU: %s, %s, OpenGL %s, GLSL %s\n", vendor, renderer, glversion, glslversion);
+
+  ImGuiIO* io = InitImgui(window);
 
   GpuProgram program = GpuProgram();
   program.shader_files = 
@@ -111,7 +117,6 @@ int main( int argc, char* argv[] )
     std::exit(EXIT_FAILURE);
   }
 
-  
   model_t model = ReadModelFile(model_filename);
   AddModelToScene(&current_scene, model);
   glm::vec3 bbox_center = (current_scene.bounding_box_max + current_scene.bounding_box_min) / 2.0f;
@@ -165,16 +170,21 @@ int main( int argc, char* argv[] )
     ChangeFrontFaceMode();
     ChangeCameraType();
     ResetCamera();
-    
-    glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     camera.Update();
     camera.screen_ratio = State.g_ScreenRatio;
+    
+    glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
+    // Start the Dear ImGui frame
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
     glm::mat4 view = camera.Camera_View();
     glm::mat4 model = current_scene.model_space;
     glm::mat4 mvp = camera.Camera_ViewProj() * model;
-
     glUseProgram(program.program_id);
     glUniformMatrix4fv(program.model_view_proj_uniform, 1, GL_FALSE, glm::value_ptr(mvp));
     glUniformMatrix4fv(program.view_uniform, 1, GL_FALSE, glm::value_ptr(view));
@@ -182,6 +192,11 @@ int main( int argc, char* argv[] )
     glUniform4fv(program.color_uniform, 1 , glm::value_ptr(State.scene_color));
 
     DrawVirtualObject(current_scene, program.program_id);
+    
+    bool demo = true;
+    ImGui::ShowDemoWindow(&demo);
+    ImGui::Render();
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     glfwSwapBuffers(window);
     input.Update();
@@ -189,6 +204,10 @@ int main( int argc, char* argv[] )
 
     last_time = curr_time;
   }
+  
+  ImGui_ImplOpenGL3_Shutdown();
+  ImGui_ImplGlfw_Shutdown();
+  ImGui::DestroyContext();
 
   glfwDestroyWindow(window);
 
@@ -214,8 +233,9 @@ void InitGLFW()
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 }
 
-void CreateGLFWwindow(GLFWwindow *window, int width, int height, const char* title)
+GLFWwindow* CreateGLFWwindow(int width, int height, const char* title)
 {
+  GLFWwindow *window;
   window = glfwCreateWindow(800, 600, "CMP143", NULL, NULL);
   if (!window)
   {
@@ -234,6 +254,22 @@ void CreateGLFWwindow(GLFWwindow *window, int width, int height, const char* tit
   State.g_ScreenRatio = 4.0f/3.0f;
 
   glfwMakeContextCurrent(window);
+  return window;
+}
+
+ImGuiIO* InitImgui(GLFWwindow* window) 
+{
+  // Setup Dear ImGui context
+  IMGUI_CHECKVERSION();
+  ImGui::CreateContext();
+  ImGuiIO io = ImGui::GetIO(); (void)io;
+  // Setup Dear ImGui style
+  ImGui::StyleColorsDark();
+
+  // Setup Platform/Renderer backends
+  ImGui_ImplGlfw_InitForOpenGL(window, true);
+  ImGui_ImplOpenGL3_Init("#version 130");
+  return &io;
 }
 
 void UpdateMouseMove(double dt)
@@ -391,9 +427,9 @@ void ChangeCameraType()
   KeyState key_v = input.GetKeyState(GLFW_KEY_V);
   if (key_v.is_pressed) {
     if (camera.camera_view == LOOK_FREE)
-      camera.camera_view == LOOK_AT;
+      camera.camera_view = LOOK_AT;
     else if (camera.camera_view == LOOK_AT)
-      camera.camera_view == LOOK_FREE;
+      camera.camera_view = LOOK_FREE;
   }
 }
 
