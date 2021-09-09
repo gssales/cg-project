@@ -1,21 +1,18 @@
-
-#include "imgui/imgui.h"
-#include "imgui/imgui_impl_glfw.h"
-#include "imgui/imgui_impl_opengl3.h"
+#include <algorithm>
+#include <iostream>
 
 #include <GL3/gl3.h>
 #include <GL3/gl3w.h>
 #include <GLFW/glfw3.h>
 
-#include <glm/gtc/type_ptr.hpp>
+#include "imgui/imgui.h"
+#include "imgui/imgui_impl_glfw.h"
+#include "imgui/imgui_impl_opengl3.h"
+
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <glm/gtx/transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <algorithm>
-#include <cstdlib>
-#include <iostream>
+
 #include "graphics/gpu_program.h"
 #include "graphics/model.h"
 #include "graphics/camera.h"
@@ -36,60 +33,48 @@ void FramebufferSizeCallback(GLFWwindow* window, int width, int height);
 void InitGLFW();
 GLFWwindow* CreateGLFWwindow(int width, int height, const char* title);
 
-ImGuiIO* InitImgui(GLFWwindow* window);
+void InitImgui(GLFWwindow* window);
 
 void UpdateMouseMove(double dt);
 void UpdateMoveCamera(double dt);
-void UpdateSceneColor(double dt);
-void UpdateCameraPlanes(double dt);
-void UpdateCameraFOV(double dt);
+void UpdateCamera_SeparateControls(double dt);
+void GenerateGUI(double dt);
 
-void ChangePolygonMode();
-void ChangeFrontFaceMode();
-void ChangeCameraType();
+void OpenObjectFile();
+
 void ResetCamera();
 
-#define POLYGON_MODES_SIZE 3
-#define FRONT_FACE_MODES_SIZE 2
+#define CAMERA_CONTROLS_TRANSLATE 0
+#define CAMERA_CONTROLS_ROTATE 1
+#define CAMERA_CONTROLS_X_AXIS 2
+#define CAMERA_CONTROLS_Y_AXIS 3
+#define CAMERA_CONTROLS_Z_AXIS 4
 struct State_t
 {
   float g_ScreenRatio;
   double g_LastCursorPosX, g_LastCursorPosY;
 
   glm::vec3 camera_initial_position = glm::vec3(0.0f, 0.0f, 0.0f);
-  float camera_initial_farplane = 100.0f;
+  float camera_initial_farplane = 1000.0f;
+  float camera_initial_nearplane = 0.1f;
 
-  const GLenum polygon_modes[POLYGON_MODES_SIZE] = {GL_FILL, GL_LINE, GL_POINT};
-  unsigned int polygon_mode = 0;
+  int polygon_mode = GL_FILL;
+  int front_face_mode = GL_CW;
 
-  const GLenum front_face_modes[POLYGON_MODES_SIZE] = {GL_CCW, GL_CW};
-  unsigned int front_face_mode = 0;
+  bool backface_culling = true;
+  bool look_at = false;
+  bool camera_separate_controls = true;
+  int camera_control_action = CAMERA_CONTROLS_TRANSLATE;
+  int camera_control_axis = CAMERA_CONTROLS_Z_AXIS;
+  bool close = false;
 
-  glm::vec4 scene_color = glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+  char model_filename[512] = "";
+
+  float gui_object_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 } State;
-
-void PrintMatrix(glm::mat4 M)
-{
-  printf("\n");
-  printf("[ %+0.2f  %+0.2f  %+0.2f  %+0.2f ]\n",
-          M[0][0], M[1][0], M[2][0], M[3][0]);
-  printf("[ %+0.2f  %+0.2f  %+0.2f  %+0.2f ]\n",
-          M[0][1], M[1][1], M[2][1], M[3][1]);
-  printf("[ %+0.2f  %+0.2f  %+0.2f  %+0.2f ]\n",
-          M[0][2], M[1][2], M[2][2], M[3][2]);
-  printf("[ %+0.2f  %+0.2f  %+0.2f  %+0.2f ]\n",
-          M[0][3], M[1][3], M[2][3], M[3][3]);
-}
 
 int main( int argc, char* argv[] )
 {
-  char* model_filename = argv[1];
-  if (model_filename == nullptr)
-  {
-    std::cout << "Please inform the path to the file you wish to view" << std::endl;
-    std::exit(0);
-  }
-
   InitGLFW();
   double last_time = glfwGetTime();
 
@@ -103,7 +88,7 @@ int main( int argc, char* argv[] )
   const GLubyte *glslversion = glGetString(GL_SHADING_LANGUAGE_VERSION);
   printf("GPU: %s, %s, OpenGL %s, GLSL %s\n", vendor, renderer, glversion, glslversion);
 
-  ImGuiIO* io = InitImgui(window);
+  InitImgui(window);
 
   GpuProgram program = GpuProgram();
   program.shader_files = 
@@ -117,26 +102,6 @@ int main( int argc, char* argv[] )
     std::exit(EXIT_FAILURE);
   }
 
-  model_t model = ReadModelFile(model_filename);
-  AddModelToScene(&current_scene, model);
-  glm::vec3 bbox_center = (current_scene.bounding_box_max + current_scene.bounding_box_min) / 2.0f;
-  current_scene.model_space *= glm::translate(-bbox_center);
-  current_scene.bounding_box_max -= bbox_center;
-  current_scene.bounding_box_min -= bbox_center;
-  State.scene_color = glm::make_vec4(model.materials[0].diffuse);
-  State.scene_color.w = 1.0f;
-
-  float bbox_size = std::max(
-    (current_scene.bounding_box_max.x - current_scene.bounding_box_min.x) * 2.0f,
-    (current_scene.bounding_box_max.y - current_scene.bounding_box_min.y) * 2.0f
-  ) / 2.0f;
-  float distance = bbox_size / std::tan(camera.field_of_view / 2.0f);
-
-  State.camera_initial_position = glm::vec3(0.0f, 0.0f, distance);
-  camera.position = State.camera_initial_position;
-
-  State.camera_initial_farplane = distance * 2.0f;
-  camera.farplane = State.camera_initial_farplane;
   
   camera.camera_view = LOOK_FREE;
 
@@ -150,32 +115,44 @@ int main( int argc, char* argv[] )
   glPointSize(3.0f);
 
   double curr_time, dt;
-  GLenum draw_style = GL_FILL;
-  GLenum front_face = GL_CW;
   while (!glfwWindowShouldClose(window))
   {
     curr_time = glfwGetTime();
     dt = curr_time - last_time;
 
-    if (input.GetKeyState(GLFW_KEY_ESCAPE).is_pressed)
+    if (input.GetKeyState(GLFW_KEY_ESCAPE).is_pressed || State.close)
       glfwSetWindowShouldClose(window, GL_TRUE);
 
-    UpdateMouseMove(dt);
-    UpdateMoveCamera(dt);
-    UpdateSceneColor(dt);
-    UpdateCameraPlanes(dt);
-    UpdateCameraFOV(dt);
-
-    ChangePolygonMode();
-    ChangeFrontFaceMode();
-    ChangeCameraType();
-    ResetCamera();
-
     camera.Update();
+
+    if (State.camera_separate_controls)
+    {
+      UpdateCamera_SeparateControls(dt);
+    }
+    else
+    {
+      UpdateMouseMove(dt);
+      UpdateMoveCamera(dt);
+    }
+
+    if (State.look_at)
+      camera.camera_view = LOOK_AT;
+    else
+      camera.camera_view = LOOK_FREE;
+
     camera.screen_ratio = State.g_ScreenRatio;
     
     glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
+    glPolygonMode(GL_FRONT_AND_BACK, State.polygon_mode);
+
+    if (State.backface_culling)
+      glEnable(GL_CULL_FACE);
+    else
+      glDisable(GL_CULL_FACE);
+      
+    glFrontFace(State.front_face_mode);
     
     // Start the Dear ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
@@ -185,16 +162,16 @@ int main( int argc, char* argv[] )
     glm::mat4 view = camera.Camera_View();
     glm::mat4 model = current_scene.model_space;
     glm::mat4 mvp = camera.Camera_ViewProj() * model;
+    
     glUseProgram(program.program_id);
     glUniformMatrix4fv(program.model_view_proj_uniform, 1, GL_FALSE, glm::value_ptr(mvp));
     glUniformMatrix4fv(program.view_uniform, 1, GL_FALSE, glm::value_ptr(view));
     glUniformMatrix4fv(program.model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform4fv(program.color_uniform, 1 , glm::value_ptr(State.scene_color));
+    glUniform4fv(program.color_uniform, 1 , State.gui_object_color);
 
     DrawVirtualObject(current_scene, program.program_id);
     
-    bool demo = true;
-    ImGui::ShowDemoWindow(&demo);
+    GenerateGUI(dt);
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
@@ -257,23 +234,25 @@ GLFWwindow* CreateGLFWwindow(int width, int height, const char* title)
   return window;
 }
 
-ImGuiIO* InitImgui(GLFWwindow* window) 
+void InitImgui(GLFWwindow* window) 
 {
   // Setup Dear ImGui context
   IMGUI_CHECKVERSION();
   ImGui::CreateContext();
-  ImGuiIO io = ImGui::GetIO(); (void)io;
+
   // Setup Dear ImGui style
   ImGui::StyleColorsDark();
 
   // Setup Platform/Renderer backends
   ImGui_ImplGlfw_InitForOpenGL(window, true);
   ImGui_ImplOpenGL3_Init("#version 130");
-  return &io;
 }
 
 void UpdateMouseMove(double dt)
 {
+  if (ImGui::GetIO().WantCaptureMouse == true)
+    return;
+
   KeyState left_button = input.GetKeyState(GLFW_MOUSE_BUTTON_LEFT);
   if (left_button.is_pressed) {
     State.g_LastCursorPosX = input.cursor_state.xvalue;
@@ -326,123 +305,151 @@ void UpdateMoveCamera(double dt)
       camera.Move(glm::normalize(move_vector) * 5.0f * (float)dt);
 }
 
-void UpdateSceneColor(double dt)
+void UpdateCamera_SeparateControls(double dt)
 {
-  KeyState key_r = input.GetKeyState(GLFW_KEY_R);
-  if (key_r.is_down) {
-    if (key_r.modifiers == GLFW_MOD_SHIFT)
-      State.scene_color.r = std::max(State.scene_color.r - 1.0f * (float)dt, 0.0f);
-    else
-      State.scene_color.r = std::min(State.scene_color.r + 1.0f * (float)dt, 1.0f);
-  }
-  KeyState key_g = input.GetKeyState(GLFW_KEY_G);
-  if (key_g.is_down) {
-    if (key_g.modifiers == GLFW_MOD_SHIFT)
-      State.scene_color.g = std::max(State.scene_color.g - 1.0f * (float)dt, 0.0f);
-    else
-      State.scene_color.g = std::min(State.scene_color.g + 1.0f * (float)dt, 1.0f);
-  }
-  KeyState key_b = input.GetKeyState(GLFW_KEY_B);
-  if (key_b.is_down) {
-    if (key_b.modifiers == GLFW_MOD_SHIFT)
-      State.scene_color.b = std::max(State.scene_color.b - 1.0f * (float)dt, 0.0f);
-    else
-      State.scene_color.b = std::min(State.scene_color.b + 1.0f * (float)dt, 1.0f);
-  }
-}
+  if (ImGui::GetIO().WantCaptureMouse == true)
+    return;
 
-void UpdateCameraPlanes(double dt)
-{
-  KeyState key_z = input.GetKeyState(GLFW_KEY_Z);
-  if (key_z.is_down) {
-    if (key_z.modifiers == GLFW_MOD_SHIFT)
-      camera.farplane = std::max(camera.farplane - (camera.farplane / 2.0f) * (float)dt, camera.nearplane + 0.1f);
-    else
-      camera.farplane = camera.farplane + (camera.farplane / 2.0f) * (float)dt;
+  KeyState left_button = input.GetKeyState(GLFW_MOUSE_BUTTON_LEFT);
+  if (left_button.is_pressed) {
+    State.g_LastCursorPosX = input.cursor_state.xvalue;
+    State.g_LastCursorPosY = input.cursor_state.yvalue;
   }
-  KeyState key_x = input.GetKeyState(GLFW_KEY_X);
-  if (key_x.is_down) {
-    if (key_x.modifiers == GLFW_MOD_SHIFT)
-      camera.nearplane = std::max(camera.nearplane - (camera.nearplane / 2.0f) * (float)dt, 0.1f);
-    else
-      camera.nearplane = std::min(camera.nearplane + (camera.nearplane / 2.0f) * (float)dt, camera.farplane - 0.1f);
-  }
-}
 
-void UpdateCameraFOV(double dt)
-{
-  KeyState key_f = input.GetKeyState(GLFW_KEY_F);
-  if (key_f.is_down) {
-    if (key_f.modifiers == GLFW_MOD_SHIFT)
-      camera.field_of_view = std::max(camera.field_of_view - PI/16.0f * (float)dt, PI/16.0f);
-    else
-      camera.field_of_view = std::min(camera.field_of_view + PI/16.0f * (float)dt, PI -0.001f);
-  }
-}
+  if (left_button.is_down && !left_button.is_pressed) {
+    PairState cursor = input.cursor_state;
+    float dy = cursor.yvalue - State.g_LastCursorPosY;
 
-void ChangePolygonMode()
-{
-  KeyState key_q = input.GetKeyState(GLFW_KEY_Q);
-  if (key_q.is_pressed)
-  {
-    if (key_q.modifiers == GLFW_MOD_SHIFT)
+    glm::mat4 cam_space = glm::inverse(camera.camera_space);
+    glm::vec3 axis;
+    switch (State.camera_control_axis)
     {
-      State.polygon_mode -= 1;
-      if (State.polygon_mode < 0)
-        State.polygon_mode = POLYGON_MODES_SIZE;
+    case CAMERA_CONTROLS_X_AXIS:
+      axis = cam_space * LEFT4;
+      break;      
+    case CAMERA_CONTROLS_Y_AXIS:
+      axis = cam_space * UP4;
+      break;
+    default:
+      axis = cam_space * FORWARD4;
+      break;
     }
-    else
+
+    if (State.camera_control_action == CAMERA_CONTROLS_TRANSLATE)
     {
-      State.polygon_mode += 1;
-      if (State.polygon_mode >= POLYGON_MODES_SIZE)
-        State.polygon_mode = 0;
+      float speed = dy * dt;
+      camera.Move(axis * speed);
     }
-    glPolygonMode(GL_FRONT_AND_BACK, State.polygon_modes[State.polygon_mode]);
+    else if (State.camera_control_action == CAMERA_CONTROLS_ROTATE)
+    {
+      float angle = -dy * dt * 0.1;
+      camera.Rotate(axis, angle);
+    }
+
+    State.g_LastCursorPosX = cursor.xvalue;
+    State.g_LastCursorPosY = cursor.yvalue;
   }
 }
 
-void ChangeFrontFaceMode()
+void GenerateGUI(double dt)
 {
-  KeyState key_e = input.GetKeyState(GLFW_KEY_E);
-  if (key_e.is_pressed)
-  {
-    if (key_e.modifiers == GLFW_MOD_SHIFT)
-    {
-      State.front_face_mode -= 1;
-      if (State.front_face_mode < 0)
-        State.front_face_mode = FRONT_FACE_MODES_SIZE;
-    }
-    else
-    {
-      State.front_face_mode += 1;
-      if (State.front_face_mode >= FRONT_FACE_MODES_SIZE)
-        State.front_face_mode = 0;
-    }
-    glFrontFace(State.front_face_modes[State.front_face_mode]);
-  }
+  ImGui::Begin("Controls");
+
+  ImGui::Text("Render Mode");
+
+  ImGui::RadioButton("Points", &State.polygon_mode, GL_POINT);
+  ImGui::RadioButton("Wireframe", &State.polygon_mode, GL_LINE);
+  ImGui::RadioButton("Solid", &State.polygon_mode, GL_FILL);
+
+  ImGui::Checkbox("Backface Culling", &State.backface_culling);
+
+  ImGui::Text("Orientation");
+  ImGui::RadioButton("CW", &State.front_face_mode, GL_CW); ImGui::SameLine();
+  ImGui::RadioButton("CCW", &State.front_face_mode, GL_CCW);
+
+  ImGui::Text("Camera");
+
+  ImGui::DragFloat("HFov", &camera.h_fov, PI/16.0f * dt, PI/16.0f, PI);
+  ImGui::DragFloat("VFov", &camera.v_fov, PI/16.0f * dt, PI/16.0f, PI);
+  
+  ImGui::DragFloat("Near plane", &camera.nearplane, (camera.nearplane / 2.0f) * dt, 
+      std::numeric_limits<float>::epsilon(), 
+      camera.farplane - std::numeric_limits<float>::epsilon());
+  ImGui::DragFloat("Far plane", &camera.farplane, (camera.farplane / 2.0f) * dt, 
+      camera.nearplane + std::numeric_limits<float>::epsilon(), 
+      std::numeric_limits<float>::max());
+
+  ImGui::Checkbox("Separate Camera Controls", &State.camera_separate_controls);
+
+  if (!State.camera_separate_controls)
+    ImGui::BeginDisabled();
+
+  ImGui::RadioButton("Translate", &State.camera_control_action, CAMERA_CONTROLS_TRANSLATE);
+  ImGui::RadioButton("Rotate", &State.camera_control_action, CAMERA_CONTROLS_ROTATE);
+
+  ImGui::RadioButton("X", &State.camera_control_axis, CAMERA_CONTROLS_X_AXIS); ImGui::SameLine();
+  ImGui::RadioButton("Y", &State.camera_control_axis, CAMERA_CONTROLS_Y_AXIS); ImGui::SameLine();
+  ImGui::RadioButton("Z", &State.camera_control_axis, CAMERA_CONTROLS_Z_AXIS);
+
+  if (!State.camera_separate_controls)
+    ImGui::EndDisabled();
+
+  if (ImGui::Button("Reset Camera"))
+    ResetCamera();
+      
+  ImGui::Checkbox("Look at Object", &State.look_at);
+
+  ImGui::ColorEdit4("Object Color", State.gui_object_color);
+
+  ImGui::InputText("File Path", State.model_filename, IM_ARRAYSIZE(State.model_filename)); ImGui::SameLine();
+  if (ImGui::Button("Open file"))
+    OpenObjectFile();
+
+  State.close = ImGui::Button("Close");
+
+  ImGui::End();
 }
 
-void ChangeCameraType()
+void OpenObjectFile()
 {
-  KeyState key_v = input.GetKeyState(GLFW_KEY_V);
-  if (key_v.is_pressed) {
-    if (camera.camera_view == LOOK_FREE)
-      camera.camera_view = LOOK_AT;
-    else if (camera.camera_view == LOOK_AT)
-      camera.camera_view = LOOK_FREE;
+  try {
+    model_t model = ReadModelFile(State.model_filename);
+    AddModelToScene(&current_scene, model);
+    glm::vec3 bbox_center = (current_scene.bounding_box_max + current_scene.bounding_box_min) / 2.0f;
+    current_scene.model_space *= glm::translate(-bbox_center);
+    current_scene.bounding_box_max -= bbox_center;
+    current_scene.bounding_box_min -= bbox_center;
+
+    State.gui_object_color[0] = model.materials[0].diffuse[0];
+    State.gui_object_color[1] = model.materials[0].diffuse[1];
+    State.gui_object_color[2] = model.materials[0].diffuse[2];
+    State.gui_object_color[3] = 1.0f;
+
+    float bbox_size = std::max(
+      (current_scene.bounding_box_max.x - current_scene.bounding_box_min.x) * 2.0f,
+      (current_scene.bounding_box_max.y - current_scene.bounding_box_min.y) * 2.0f
+    ) / 2.0f;
+    float distance = bbox_size / std::tan(camera.h_fov / 2.0f);
+
+    State.camera_initial_position = glm::vec3(0.0f, 0.0f, distance);
+    camera.position = State.camera_initial_position;
+
+    State.camera_initial_farplane = distance * 2.0f;
+    camera.farplane = State.camera_initial_farplane;
+  } catch ( std::exception& e ) {
+    
   }
 }
 
 void ResetCamera()
 {
-  KeyState key_c = input.GetKeyState(GLFW_KEY_C);
-  if (key_c.is_pressed)
-  {
-    camera.position = State.camera_initial_position;
-    camera.farplane = State.camera_initial_farplane;
-    camera.nearplane = 0.1f;
-    camera.view_vector = FORWARD;
-  }
+  camera.position = State.camera_initial_position;
+  camera.farplane = State.camera_initial_farplane;
+  camera.nearplane = State.camera_initial_nearplane;
+  camera.view_vector = FORWARD;
+  camera.camera_view = LOOK_FREE;
+  camera.h_fov = PI / 3.0f;
+  camera.v_fov = PI / 3.0f;
 }
 
 void ErrorCallback(int error, const char* description) 

@@ -5,7 +5,10 @@
 #include <glm/mat4x4.hpp>
 #include <glm/vec4.hpp>
 #include <glm/vec3.hpp>
+#include "matrices.h"
+
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/type_ptr.hpp>
 #include <glm/gtx/transform.hpp>
 
 enum Projection { PERSPECTIVE, ORTHOGRAPHIC };
@@ -35,6 +38,7 @@ class Camera
 {
 public:
   glm::mat4 camera_space = glm::mat4x4(1.0f);
+
   glm::vec3 position = glm::vec3(0.0f,0.0f,0.0f);
   glm::vec3 up_vector = UP;
   glm::vec3 view_vector = FORWARD;
@@ -48,8 +52,9 @@ public:
   float distance = 1.0f;
 
   Projection projection = PERSPECTIVE; 
-  float field_of_view = 3.141592 / 3.0f;
-  float nearplane = 0.1f, farplane = 100.0f;
+  float h_fov = PI / 3.0f;
+  float v_fov = PI / 3.0f;
+  float nearplane = 0.1f, farplane = 1000.0f;
   float screen_ratio = 1;
 
   void Update();
@@ -57,7 +62,8 @@ public:
   glm::mat4 Camera_View();
   glm::mat4 Camera_Projection();
   void Rotate(float pitch, float yaw);
-  void Move(glm::vec3 move);
+  void Rotate(glm::vec3 move_vector, float angle);
+  void Move(glm::vec3 move_vector);
 };
 
 
