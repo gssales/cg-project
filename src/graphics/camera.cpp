@@ -62,6 +62,7 @@ void Camera::Rotate(float pitch, float yaw)
 void Camera::Rotate(glm::vec3 axis, float angle)
 {
   view_vector = rotate(angle, axis) * to_vec4(view_vector, 0.0f);
+  up_vector = rotate(angle, axis) * to_vec4(up_vector, 0.0f);
 }
 
 void Camera::Move(glm::vec3 move)

@@ -42,6 +42,7 @@ namespace matrices
                         float f);
   glm::mat4 perspective(float h_fov, float v_fov, float aspect, float n,
                         float f);
+  glm::mat4 viewport(float lv, float rv, float bv, float tv);
                         
 }
 

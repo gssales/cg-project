@@ -18,10 +18,12 @@
 #include "graphics/camera.h"
 #include "input.h"
 #include "scene.h"
+#include "close2gl.h"
 
 Camera camera;
 Input input;
 scene_object_t current_scene;
+model_t current_model;
 
 void ErrorCallback(int error, const char* description);
 void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mode);
@@ -49,10 +51,14 @@ void ResetCamera();
 #define CAMERA_CONTROLS_X_AXIS 2
 #define CAMERA_CONTROLS_Y_AXIS 3
 #define CAMERA_CONTROLS_Z_AXIS 4
+#define USE_OPENGL 0
+#define USE_CLOSE2GL 1
 struct State_t
 {
   float g_ScreenRatio;
   double g_LastCursorPosX, g_LastCursorPosY;
+
+  bool model_loaded = false;
 
   glm::vec3 camera_initial_position = glm::vec3(0.0f, 0.0f, 0.0f);
   float camera_initial_farplane = 1000.0f;
@@ -68,7 +74,11 @@ struct State_t
   int camera_control_axis = CAMERA_CONTROLS_Z_AXIS;
   bool close = false;
 
-  char model_filename[512] = "";
+  char model_filename[512] = "..\\res\\models\\cube.in";
+
+  int shading_mode = PHONG_SHADING;
+  bool lights_on = true;
+  int use_api = USE_OPENGL;
 
   float gui_object_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 } State;
@@ -102,10 +112,9 @@ int main( int argc, char* argv[] )
     std::exit(EXIT_FAILURE);
   }
 
-  
   camera.camera_view = LOOK_FREE;
 
-  glEnable(GL_DEPTH_TEST);                   
+  glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LEQUAL);
   glEnable(GL_CULL_FACE);
   glCullFace(GL_BACK);
@@ -115,10 +124,26 @@ int main( int argc, char* argv[] )
   glPointSize(3.0f);
 
   double curr_time, dt;
+  double update_fps = 0.0;
+  unsigned int count_frames = 0;
   while (!glfwWindowShouldClose(window))
   {
     curr_time = glfwGetTime();
     dt = curr_time - last_time;
+
+    update_fps += dt;
+    count_frames++;
+     if ( update_fps >= 0.5 ){
+      double fps = double(count_frames) / dt;
+
+      std::stringstream ss;
+      ss << "Model - " << (State.use_api == USE_OPENGL ? "OpenGL" : "Close2GL") << " [" << fps << " FPS]";
+
+      glfwSetWindowTitle(window, ss.str().c_str());
+
+      count_frames = 0;
+      update_fps = 0.0;
+     }
 
     if (input.GetKeyState(GLFW_KEY_ESCAPE).is_pressed || State.close)
       glfwSetWindowShouldClose(window, GL_TRUE);
@@ -142,34 +167,52 @@ int main( int argc, char* argv[] )
 
     camera.screen_ratio = State.g_ScreenRatio;
     
-    glClearColor(0.3f, 0.3f, 0.3f, 1.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     
     glPolygonMode(GL_FRONT_AND_BACK, State.polygon_mode);
 
-    if (State.backface_culling)
-      glEnable(GL_CULL_FACE);
-    else
+    if (State.use_api == USE_CLOSE2GL)
       glDisable(GL_CULL_FACE);
-      
-    glFrontFace(State.front_face_mode);
+    else 
+    {
+      if (State.backface_culling )
+        glEnable(GL_CULL_FACE);
+      else
+        glDisable(GL_CULL_FACE);
+        
+      glFrontFace(State.front_face_mode);
+    }
     
     // Start the Dear ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    glm::mat4 view = camera.Camera_View();
-    glm::mat4 model = current_scene.model_space;
-    glm::mat4 mvp = camera.Camera_ViewProj() * model;
-    
-    glUseProgram(program.program_id);
-    glUniformMatrix4fv(program.model_view_proj_uniform, 1, GL_FALSE, glm::value_ptr(mvp));
-    glUniformMatrix4fv(program.view_uniform, 1, GL_FALSE, glm::value_ptr(view));
-    glUniformMatrix4fv(program.model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-    glUniform4fv(program.color_uniform, 1 , State.gui_object_color);
+    if (State.model_loaded)
+    {
+      glm::mat4 view = camera.Camera_View();
+      glm::mat4 proj = camera.Camera_Projection();
+      glm::mat4 model = current_scene.model_space;
+      glm::mat4 mvp = camera.Camera_ViewProj() * model;
+      GLint vp[4];
+      glGetIntegerv(GL_VIEWPORT, vp);
+      glm::mat4 viewport_map = matrices::viewport(vp[0], vp[1], vp[2], vp[3]);
+      
+      glUseProgram(program.program_id);
+      glUniformMatrix4fv(program.model_view_proj_uniform, 1, GL_FALSE, glm::value_ptr(mvp));
+      glUniformMatrix4fv(program.view_uniform, 1, GL_FALSE, glm::value_ptr(view));
+      glUniformMatrix4fv(program.model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+      glUniform4fv(program.color_uniform, 1 , State.gui_object_color);
+      glUniform1i(program.shading_uniform, State.shading_mode);
+      glUniform1i(program.lighting_uniform, State.lights_on);
+      glUniform1i(program.close2gl_uniform, State.use_api);
 
-    DrawVirtualObject(current_scene, program.program_id);
+      if (State.use_api == USE_CLOSE2GL)
+        c2gl_Transform_Vertices(&current_scene, current_model, mvp, viewport_map, State.backface_culling, State.front_face_mode);
+
+      DrawVirtualObject(current_scene, program.program_id);
+    }
     
     GenerateGUI(dt);
     ImGui::Render();
@@ -337,11 +380,12 @@ void UpdateCamera_SeparateControls(double dt)
 
     if (State.camera_control_action == CAMERA_CONTROLS_TRANSLATE)
     {
-      float speed = dy * dt;
+      float speed = dy * 0.1f * matrices::length(cam_space * ORIGIN4)/2.0f * dt;
       camera.Move(axis * speed);
     }
     else if (State.camera_control_action == CAMERA_CONTROLS_ROTATE)
     {
+      PrintVec3(axis);
       float angle = -dy * dt * 0.1;
       camera.Rotate(axis, angle);
     }
@@ -357,21 +401,41 @@ void GenerateGUI(double dt)
 
   ImGui::Text("Render Mode");
 
+  if (ImGui::RadioButton("OpenGL", &State.use_api, USE_OPENGL))
+    UseOpenGL(&current_scene, current_model); 
+  ImGui::SameLine();
+  ImGui::RadioButton("Close2GL", &State.use_api, USE_CLOSE2GL);
+
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::RadioButton("Points", &State.polygon_mode, GL_POINT);
   ImGui::RadioButton("Wireframe", &State.polygon_mode, GL_LINE);
   ImGui::RadioButton("Solid", &State.polygon_mode, GL_FILL);
 
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
+  ImGui::Text("Shading");
+  ImGui::RadioButton("Gouraud AD", &State.shading_mode, GOURAUD_AD_SHADING); ImGui::SameLine();
+  ImGui::RadioButton("Gouraud ADS", &State.shading_mode, GOURAUD_ADS_SHADING);
+  ImGui::RadioButton("Phong", &State.shading_mode, PHONG_SHADING); ImGui::SameLine();
+  ImGui::RadioButton("None", &State.shading_mode, NO_SHADING);
+  
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
+  ImGui::Checkbox("Lights On", &State.lights_on);
+
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::Checkbox("Backface Culling", &State.backface_culling);
 
   ImGui::Text("Orientation");
   ImGui::RadioButton("CW", &State.front_face_mode, GL_CW); ImGui::SameLine();
   ImGui::RadioButton("CCW", &State.front_face_mode, GL_CCW);
 
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
+  ImGui::Separator();
   ImGui::Text("Camera");
 
   ImGui::DragFloat("HFov", &camera.h_fov, PI/16.0f * dt, PI/16.0f, PI);
   ImGui::DragFloat("VFov", &camera.v_fov, PI/16.0f * dt, PI/16.0f, PI);
   
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::DragFloat("Near plane", &camera.nearplane, (camera.nearplane / 2.0f) * dt, 
       std::numeric_limits<float>::epsilon(), 
       camera.farplane - std::numeric_limits<float>::epsilon());
@@ -379,14 +443,18 @@ void GenerateGUI(double dt)
       camera.nearplane + std::numeric_limits<float>::epsilon(), 
       std::numeric_limits<float>::max());
 
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::Checkbox("Separate Camera Controls", &State.camera_separate_controls);
+  ImGui::Checkbox("Look at Object", &State.look_at);
 
   if (!State.camera_separate_controls)
     ImGui::BeginDisabled();
 
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::RadioButton("Translate", &State.camera_control_action, CAMERA_CONTROLS_TRANSLATE);
   ImGui::RadioButton("Rotate", &State.camera_control_action, CAMERA_CONTROLS_ROTATE);
 
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::RadioButton("X", &State.camera_control_axis, CAMERA_CONTROLS_X_AXIS); ImGui::SameLine();
   ImGui::RadioButton("Y", &State.camera_control_axis, CAMERA_CONTROLS_Y_AXIS); ImGui::SameLine();
   ImGui::RadioButton("Z", &State.camera_control_axis, CAMERA_CONTROLS_Z_AXIS);
@@ -394,17 +462,21 @@ void GenerateGUI(double dt)
   if (!State.camera_separate_controls)
     ImGui::EndDisabled();
 
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
   if (ImGui::Button("Reset Camera"))
     ResetCamera();
-      
-  ImGui::Checkbox("Look at Object", &State.look_at);
 
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
+  ImGui::Separator();
+  ImGui::Text("Model");
   ImGui::ColorEdit4("Object Color", State.gui_object_color);
 
-  ImGui::InputText("File Path", State.model_filename, IM_ARRAYSIZE(State.model_filename)); ImGui::SameLine();
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
+  ImGui::InputText("File Path", State.model_filename, IM_ARRAYSIZE(State.model_filename));
   if (ImGui::Button("Open file"))
     OpenObjectFile();
 
+  ImGui::Dummy(ImVec2(0.0f, 10.0f));
   State.close = ImGui::Button("Close");
 
   ImGui::End();
@@ -413,16 +485,16 @@ void GenerateGUI(double dt)
 void OpenObjectFile()
 {
   try {
-    model_t model = ReadModelFile(State.model_filename);
-    AddModelToScene(&current_scene, model);
+    current_model = ReadModelFile(State.model_filename);
+    AddModelToScene(&current_scene, current_model);
     glm::vec3 bbox_center = (current_scene.bounding_box_max + current_scene.bounding_box_min) / 2.0f;
     current_scene.model_space *= glm::translate(-bbox_center);
     current_scene.bounding_box_max -= bbox_center;
     current_scene.bounding_box_min -= bbox_center;
 
-    State.gui_object_color[0] = model.materials[0].diffuse[0];
-    State.gui_object_color[1] = model.materials[0].diffuse[1];
-    State.gui_object_color[2] = model.materials[0].diffuse[2];
+    State.gui_object_color[0] = current_model.materials[0].diffuse[0];
+    State.gui_object_color[1] = current_model.materials[0].diffuse[1];
+    State.gui_object_color[2] = current_model.materials[0].diffuse[2];
     State.gui_object_color[3] = 1.0f;
 
     float bbox_size = std::max(
@@ -436,6 +508,8 @@ void OpenObjectFile()
 
     State.camera_initial_farplane = distance * 2.0f;
     camera.farplane = State.camera_initial_farplane;
+
+    State.model_loaded = true;
   } catch ( std::exception& e ) {
     
   }
@@ -447,6 +521,7 @@ void ResetCamera()
   camera.farplane = State.camera_initial_farplane;
   camera.nearplane = State.camera_initial_nearplane;
   camera.view_vector = FORWARD;
+  camera.up_vector = UP;
   camera.camera_view = LOOK_FREE;
   camera.h_fov = PI / 3.0f;
   camera.v_fov = PI / 3.0f;

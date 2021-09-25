@@ -117,11 +117,7 @@ glm::mat4 matrices::rotate(float angle, glm::vec3 axis)
   float c = cos(angle);
   float s = sin(angle);
 
-  glm::vec3 v = axis / length(axis);
-
-  float vx = v.x;
-  float vy = v.y;
-  float vz = v.z;
+  glm::vec3 v = normalized(axis);
 
   return mat4(
     v.x*v.x*(1-c) +c     , v.x*v.y*(1-c) -v.z*s , v.x*v.z*(1-c) +v.y*s , 0.0f ,
@@ -191,6 +187,16 @@ glm::mat4 matrices::perspective(float h_fov, float v_fov, float aspect, float n,
      0.0f,          0.0f,         -(f+n)/(f-n), -(2.0f*f*n)/(f-n),
      0.0f,          0.0f,          -1.0f,         0.0f
   );
+}
+
+glm::mat4 matrices::viewport(float lv, float tv, float rv, float bv)
+{
+  return mat4(
+    (rv-lv)/2.0f, 0.0f,       0.0f, (rv+tv)/2.0f,
+     0.0f,     (tv-bv)/2.0f, 0.0f, (tv+bv)/2.0f,
+     0.0f,      0.0f,       1.0f, 0.0f,
+     0.0f,      0.0f,       0.0f, 1.0f
+  );  
 }
 
 void PrintMatrix(glm::mat4 M)
