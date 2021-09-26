@@ -142,4 +142,10 @@ void CreateGpuProgram(GpuProgram* gpu_program)
     = glGetUniformLocation(gpu_program->program_id, "model");
   gpu_program->color_uniform
     = glGetUniformLocation(gpu_program->program_id, "color");
+  gpu_program->shading_uniform
+    = glGetUniformLocation(gpu_program->program_id, "shading_mode");
+  gpu_program->lighting_uniform
+    = glGetUniformLocation(gpu_program->program_id, "lighting");
+  gpu_program->close2gl_uniform
+    = glGetUniformLocation(gpu_program->program_id, "close2gl");
 }

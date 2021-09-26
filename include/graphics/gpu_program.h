@@ -7,6 +7,11 @@
 #include <GL3/gl3w.h>
 #include "loaders.h"
 
+#define NO_SHADING 0
+#define GOURAUD_AD_SHADING 1
+#define GOURAUD_ADS_SHADING 2
+#define PHONG_SHADING 3
+
 typedef struct {
     unsigned int type;
     const char* filename;
@@ -21,6 +26,9 @@ class GpuProgram {
     int model_uniform;
     int view_uniform;
     int color_uniform;
+    int shading_uniform;
+    int lighting_uniform;
+    int close2gl_uniform;
 };
 
 void CreateGpuProgram(GpuProgram* gpu_program);
