@@ -20,10 +20,10 @@
 #include "scene.h"
 #include "close2gl.h"
 
-Camera camera;
-Input input;
-scene_object_t current_scene;
-model_t current_model;
+Camera g_Camera;
+Input g_Input;
+scene_object_t g_Scene;
+model_t g_Model;
 
 void ErrorCallback(int error, const char* description);
 void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mode);
@@ -55,8 +55,8 @@ void ResetCamera();
 #define USE_CLOSE2GL 1
 struct State_t
 {
-  float g_ScreenRatio;
-  double g_LastCursorPosX, g_LastCursorPosY;
+  float screen_width, screen_height, screen_ratio;
+  double lastCursorPosX, lastCursorPosY;
 
   bool model_loaded = false;
 
@@ -112,7 +112,7 @@ int main( int argc, char* argv[] )
     std::exit(EXIT_FAILURE);
   }
 
-  camera.camera_view = LOOK_FREE;
+  g_Camera.camera_view = LOOK_FREE;
 
   glEnable(GL_DEPTH_TEST);
   glDepthFunc(GL_LEQUAL);
@@ -145,10 +145,10 @@ int main( int argc, char* argv[] )
       update_fps = 0.0;
      }
 
-    if (input.GetKeyState(GLFW_KEY_ESCAPE).is_pressed || State.close)
+    if (g_Input.GetKeyState(GLFW_KEY_ESCAPE).is_pressed || State.close)
       glfwSetWindowShouldClose(window, GL_TRUE);
 
-    camera.Update();
+    g_Camera.Update();
 
     if (State.camera_separate_controls)
     {
@@ -161,11 +161,11 @@ int main( int argc, char* argv[] )
     }
 
     if (State.look_at)
-      camera.camera_view = LOOK_AT;
+      g_Camera.camera_view = LOOK_AT;
     else
-      camera.camera_view = LOOK_FREE;
+      g_Camera.camera_view = LOOK_FREE;
 
-    camera.screen_ratio = State.g_ScreenRatio;
+    g_Camera.screen_ratio = State.screen_ratio;
     
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -191,10 +191,10 @@ int main( int argc, char* argv[] )
 
     if (State.model_loaded)
     {
-      glm::mat4 view = camera.Camera_View();
-      glm::mat4 proj = camera.Camera_Projection();
-      glm::mat4 model = current_scene.model_space;
-      glm::mat4 mvp = camera.Camera_ViewProj() * model;
+      glm::mat4 view = g_Camera.Camera_View();
+      glm::mat4 proj = g_Camera.Camera_Projection();
+      glm::mat4 model = g_Scene.model_space;
+      glm::mat4 mvp = g_Camera.Camera_ViewProj() * model;
       GLint vp[4];
       glGetIntegerv(GL_VIEWPORT, vp);
       glm::mat4 viewport_map = matrices::viewport(vp[0], vp[1], vp[2], vp[3]);
@@ -209,9 +209,9 @@ int main( int argc, char* argv[] )
       glUniform1i(program.close2gl_uniform, State.use_api);
 
       if (State.use_api == USE_CLOSE2GL)
-        c2gl_Transform_Vertices(&current_scene, current_model, mvp, viewport_map, State.backface_culling, State.front_face_mode);
+        c2gl_Transform_Vertices(&g_Scene, g_Model, mvp, viewport_map, State.backface_culling, State.front_face_mode);
 
-      DrawVirtualObject(current_scene, program.program_id);
+      DrawVirtualObject(g_Scene, program.program_id);
     }
     
     GenerateGUI(dt);
@@ -219,7 +219,7 @@ int main( int argc, char* argv[] )
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
     glfwSwapBuffers(window);
-    input.Update();
+    g_Input.Update();
     glfwPollEvents();
 
     last_time = curr_time;
@@ -271,7 +271,7 @@ GLFWwindow* CreateGLFWwindow(int width, int height, const char* title)
 
   glfwSetFramebufferSizeCallback(window, FramebufferSizeCallback);
   glfwSetWindowSize(window, 800, 600);
-  State.g_ScreenRatio = 4.0f/3.0f;
+  State.screen_ratio = 4.0f/3.0f;
 
   glfwMakeContextCurrent(window);
   return window;
@@ -296,33 +296,33 @@ void UpdateMouseMove(double dt)
   if (ImGui::GetIO().WantCaptureMouse == true)
     return;
 
-  KeyState left_button = input.GetKeyState(GLFW_MOUSE_BUTTON_LEFT);
+  KeyState left_button = g_Input.GetKeyState(GLFW_MOUSE_BUTTON_LEFT);
   if (left_button.is_pressed) {
-    State.g_LastCursorPosX = input.cursor_state.xvalue;
-    State.g_LastCursorPosY = input.cursor_state.yvalue;
+    State.lastCursorPosX = g_Input.cursor_state.xvalue;
+    State.lastCursorPosY = g_Input.cursor_state.yvalue;
   }
   if (left_button.is_down && !left_button.is_pressed) {
-    PairState cursor = input.cursor_state;
-    float dx = cursor.xvalue - State.g_LastCursorPosX;
-    float dy = cursor.yvalue - State.g_LastCursorPosY;
+    PairState cursor = g_Input.cursor_state;
+    float dx = cursor.xvalue - State.lastCursorPosX;
+    float dy = cursor.yvalue - State.lastCursorPosY;
 
     float yaw = -dx * dt * 0.1;
     float pitch = -dy * dt * 0.1;
-    camera.Rotate(pitch, yaw);
+    g_Camera.Rotate(pitch, yaw);
 
-    State.g_LastCursorPosX = cursor.xvalue;
-    State.g_LastCursorPosY = cursor.yvalue;
+    State.lastCursorPosX = cursor.xvalue;
+    State.lastCursorPosY = cursor.yvalue;
   }
 }
 
 void UpdateMoveCamera(double dt)
 {
   glm::vec3 move_vector = glm::vec3(0.0f);
-  KeyState key_w = input.GetKeyState(GLFW_KEY_W);
-  KeyState key_a = input.GetKeyState(GLFW_KEY_A);
-  KeyState key_s = input.GetKeyState(GLFW_KEY_S);
-  KeyState key_d = input.GetKeyState(GLFW_KEY_D);
-  glm::mat4 cam_space = glm::inverse(camera.camera_space);
+  KeyState key_w = g_Input.GetKeyState(GLFW_KEY_W);
+  KeyState key_a = g_Input.GetKeyState(GLFW_KEY_A);
+  KeyState key_s = g_Input.GetKeyState(GLFW_KEY_S);
+  KeyState key_d = g_Input.GetKeyState(GLFW_KEY_D);
+  glm::mat4 cam_space = glm::inverse(g_Camera.camera_space);
   if (key_w.is_down)
   {
     glm::vec4 m = cam_space * FORWARD4;
@@ -345,7 +345,7 @@ void UpdateMoveCamera(double dt)
   }
 
   if (glm::length(move_vector) > 0.0f)
-      camera.Move(glm::normalize(move_vector) * 5.0f * (float)dt);
+      g_Camera.Move(glm::normalize(move_vector) * 5.0f * (float)dt);
 }
 
 void UpdateCamera_SeparateControls(double dt)
@@ -353,17 +353,17 @@ void UpdateCamera_SeparateControls(double dt)
   if (ImGui::GetIO().WantCaptureMouse == true)
     return;
 
-  KeyState left_button = input.GetKeyState(GLFW_MOUSE_BUTTON_LEFT);
+  KeyState left_button = g_Input.GetKeyState(GLFW_MOUSE_BUTTON_LEFT);
   if (left_button.is_pressed) {
-    State.g_LastCursorPosX = input.cursor_state.xvalue;
-    State.g_LastCursorPosY = input.cursor_state.yvalue;
+    State.lastCursorPosX = g_Input.cursor_state.xvalue;
+    State.lastCursorPosY = g_Input.cursor_state.yvalue;
   }
 
   if (left_button.is_down && !left_button.is_pressed) {
-    PairState cursor = input.cursor_state;
-    float dy = cursor.yvalue - State.g_LastCursorPosY;
+    PairState cursor = g_Input.cursor_state;
+    float dy = cursor.yvalue - State.lastCursorPosY;
 
-    glm::mat4 cam_space = glm::inverse(camera.camera_space);
+    glm::mat4 cam_space = glm::inverse(g_Camera.camera_space);
     glm::vec3 axis;
     switch (State.camera_control_axis)
     {
@@ -381,17 +381,17 @@ void UpdateCamera_SeparateControls(double dt)
     if (State.camera_control_action == CAMERA_CONTROLS_TRANSLATE)
     {
       float speed = dy * 0.1f * matrices::length(cam_space * ORIGIN4)/2.0f * dt;
-      camera.Move(axis * speed);
+      g_Camera.Move(axis * speed);
     }
     else if (State.camera_control_action == CAMERA_CONTROLS_ROTATE)
     {
       PrintVec3(axis);
       float angle = -dy * dt * 0.1;
-      camera.Rotate(axis, angle);
+      g_Camera.Rotate(axis, angle);
     }
 
-    State.g_LastCursorPosX = cursor.xvalue;
-    State.g_LastCursorPosY = cursor.yvalue;
+    State.lastCursorPosX = cursor.xvalue;
+    State.lastCursorPosY = cursor.yvalue;
   }
 }
 
@@ -485,29 +485,29 @@ void GenerateGUI(double dt)
 void OpenObjectFile()
 {
   try {
-    current_model = ReadModelFile(State.model_filename);
-    AddModelToScene(&current_scene, current_model);
-    glm::vec3 bbox_center = (current_scene.bounding_box_max + current_scene.bounding_box_min) / 2.0f;
-    current_scene.model_space *= glm::translate(-bbox_center);
-    current_scene.bounding_box_max -= bbox_center;
-    current_scene.bounding_box_min -= bbox_center;
+    g_Model = ReadModelFile(State.model_filename);
+    AddModelToScene(&g_Scene, g_Model);
+    glm::vec3 bbox_center = (g_Scene.bounding_box_max + g_Scene.bounding_box_min) / 2.0f;
+    g_Scene.model_space *= glm::translate(-bbox_center);
+    g_Scene.bounding_box_max -= bbox_center;
+    g_Scene.bounding_box_min -= bbox_center;
 
-    State.gui_object_color[0] = current_model.materials[0].diffuse[0];
-    State.gui_object_color[1] = current_model.materials[0].diffuse[1];
-    State.gui_object_color[2] = current_model.materials[0].diffuse[2];
+    State.gui_object_color[0] = g_Model.materials[0].diffuse[0];
+    State.gui_object_color[1] = g_Model.materials[0].diffuse[1];
+    State.gui_object_color[2] = g_Model.materials[0].diffuse[2];
     State.gui_object_color[3] = 1.0f;
 
     float bbox_size = std::max(
-      (current_scene.bounding_box_max.x - current_scene.bounding_box_min.x) * 2.0f,
-      (current_scene.bounding_box_max.y - current_scene.bounding_box_min.y) * 2.0f
+      (g_Scene.bounding_box_max.x - g_Scene.bounding_box_min.x) * 2.0f,
+      (g_Scene.bounding_box_max.y - g_Scene.bounding_box_min.y) * 2.0f
     ) / 2.0f;
-    float distance = bbox_size / std::tan(camera.h_fov / 2.0f);
+    float distance = bbox_size / std::tan(g_Camera.h_fov / 2.0f);
 
     State.camera_initial_position = glm::vec3(0.0f, 0.0f, distance);
-    camera.position = State.camera_initial_position;
+    g_Camera.position = State.camera_initial_position;
 
     State.camera_initial_farplane = distance * 2.0f;
-    camera.farplane = State.camera_initial_farplane;
+    g_Camera.farplane = State.camera_initial_farplane;
 
     State.model_loaded = true;
   } catch ( std::exception& e ) {
@@ -517,14 +517,14 @@ void OpenObjectFile()
 
 void ResetCamera()
 {
-  camera.position = State.camera_initial_position;
-  camera.farplane = State.camera_initial_farplane;
-  camera.nearplane = State.camera_initial_nearplane;
-  camera.view_vector = FORWARD;
-  camera.up_vector = UP;
-  camera.camera_view = LOOK_FREE;
-  camera.h_fov = PI / 3.0f;
-  camera.v_fov = PI / 3.0f;
+  g_Camera.position = State.camera_initial_position;
+  g_Camera.farplane = State.camera_initial_farplane;
+  g_Camera.nearplane = State.camera_initial_nearplane;
+  g_Camera.view_vector = FORWARD;
+  g_Camera.up_vector = UP;
+  g_Camera.camera_view = LOOK_FREE;
+  g_Camera.h_fov = PI / 3.0f;
+  g_Camera.v_fov = PI / 3.0f;
 }
 
 void ErrorCallback(int error, const char* description) 
@@ -534,30 +534,30 @@ void ErrorCallback(int error, const char* description)
 
 void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mod)
 {
-  input.KeyCallback(key, action, mod);
+  g_Input.KeyCallback(key, action, mod);
 }
 
 void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
 {
-  input.KeyCallback(button, action, mods);
+  g_Input.KeyCallback(button, action, mods);
 }
 
 void CursorPosCallback(GLFWwindow* window, double xpos, double ypos)
 {
-  input.cursor_state.xvalue = xpos;
-  input.cursor_state.yvalue = ypos;
-  input.cursor_changed = true;
+  g_Input.cursor_state.xvalue = xpos;
+  g_Input.cursor_state.yvalue = ypos;
+  g_Input.cursor_changed = true;
 }
 
 void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
 {
-  input.scroll_state.xvalue = xoffset;
-  input.scroll_state.yvalue = yoffset;
-  input.scroll_changed = true;
+  g_Input.scroll_state.xvalue = xoffset;
+  g_Input.scroll_state.yvalue = yoffset;
+  g_Input.scroll_changed = true;
 }
 
 void FramebufferSizeCallback(GLFWwindow* window, int width, int height)
 {
   glViewport(0, 0, width, height);
-  State.g_ScreenRatio = (float)width / height;
+  State.screen_ratio = (float)width / height;
 }
