@@ -97,6 +97,9 @@ void CompileShader(const char* filename, unsigned int shader_id)
   if (!compiled_status) {
     throw std::runtime_error("Shader compilation failed");
   }
+  else {
+    std::cout << "Shader successfully compiled : " << filename << std::endl;
+  }
 }
 
 void LoadShader(ShaderInfo* shader)
@@ -125,7 +128,7 @@ void LoadShaderFiles(std::list<ShaderInfo>* shaders)
   }
 }
 
-void CreateGpuProgram(GpuProgram* gpu_program) 
+void CreateGpuProgram(OpenGL_GpuProgram* gpu_program) 
 {
   LoadShaderFiles(&(gpu_program->shader_files));
 
@@ -146,6 +149,17 @@ void CreateGpuProgram(GpuProgram* gpu_program)
     = glGetUniformLocation(gpu_program->program_id, "shading_mode");
   gpu_program->lighting_uniform
     = glGetUniformLocation(gpu_program->program_id, "lighting");
-  gpu_program->close2gl_uniform
-    = glGetUniformLocation(gpu_program->program_id, "close2gl");
+}
+
+void CreateGpuProgram(Close2GL_GpuProgram* gpu_program) 
+{
+  LoadShaderFiles(&(gpu_program->shader_files));
+
+  if ( gpu_program->program_id != 0 )
+    glDeleteProgram(gpu_program->program_id);
+
+  LinkGpuProgram(gpu_program);
+
+  gpu_program->texture_uniform 
+    = glGetUniformLocation(gpu_program->program_id, "TextureImage0");
 }

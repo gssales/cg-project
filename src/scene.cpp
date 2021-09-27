@@ -41,7 +41,7 @@ void AddModelToScene(scene_object_t *obj, model_t model)
   location = 2;
   GLuint VBO_projected_coefficients_id;
   int data_size = 4;
-  float data[data_size] = {0.0f, 0.0f, 0.0f, 1.0f};
+  float data[4] = {0.0f, 0.0f, 0.0f, 1.0f};
   glCreateBuffers(1, &VBO_projected_coefficients_id);
   glBindBuffer(GL_ARRAY_BUFFER, VBO_projected_coefficients_id);
   glBufferData(GL_ARRAY_BUFFER, data_size * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
@@ -60,7 +60,43 @@ void AddModelToScene(scene_object_t *obj, model_t model)
   glBindVertexArray(0);
 }
 
-void DrawVirtualObject(scene_object_t obj, GLuint program_id)
+void AddTriangles(scene_object_t *obj, float *vertex_data, int vertex_count, float *texcoords_data, int texcoords_count)
+{
+  GLuint vertex_array_object_id;
+  glGenVertexArrays(1, &vertex_array_object_id);
+  glBindVertexArray(vertex_array_object_id);
+
+  obj->name           = "Triangles";
+  obj->first_index    = 0;
+  obj->vertex_count   = vertex_count / 2;
+  obj->rendering_mode = GL_TRIANGLES;
+  obj->vao_id = vertex_array_object_id;
+
+  GLint  number_of_dimensions = 2;
+  GLuint location = 0;
+  GLuint VBO_vertex_coefficients_id;
+  glCreateBuffers(1, &VBO_vertex_coefficients_id);
+  glBindBuffer(GL_ARRAY_BUFFER, VBO_vertex_coefficients_id);
+    glBufferStorage( GL_ARRAY_BUFFER, vertex_count * sizeof(GL_FLOAT), vertex_data, GL_DYNAMIC_STORAGE_BIT);
+    glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(location);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  obj->vbo_vertex_id = VBO_vertex_coefficients_id;
+
+  location = 1;
+  GLuint VBO_texcoords_coefficients_id;
+  glCreateBuffers(1, &VBO_texcoords_coefficients_id);
+  glBindBuffer(GL_ARRAY_BUFFER, VBO_texcoords_coefficients_id);
+    glBufferStorage( GL_ARRAY_BUFFER, texcoords_count * sizeof(GL_FLOAT), texcoords_data, GL_DYNAMIC_STORAGE_BIT);
+    glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(location);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  obj->vbo_texture_coords_id = VBO_texcoords_coefficients_id;
+
+  glBindVertexArray(0);
+}
+
+void DrawVirtualObject(scene_object_t obj)
 {
   glBindVertexArray(obj.vao_id);
 

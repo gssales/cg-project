@@ -22,15 +22,24 @@ class GpuProgram {
   public:
     std::list<ShaderInfo> shader_files;
     unsigned int program_id;
+};
+
+class OpenGL_GpuProgram : public GpuProgram {
+  public:
     int model_view_proj_uniform;
     int model_uniform;
     int view_uniform;
     int color_uniform;
     int shading_uniform;
     int lighting_uniform;
-    int close2gl_uniform;
 };
 
-void CreateGpuProgram(GpuProgram* gpu_program);
+class Close2GL_GpuProgram : public GpuProgram {
+  public:
+    int texture_uniform;
+};
+
+void CreateGpuProgram(OpenGL_GpuProgram* gpu_program);
+void CreateGpuProgram(Close2GL_GpuProgram* gpu_program);
 
 #endif // _GPU_PROGRAM_H

@@ -23,10 +23,14 @@ typedef struct
   GLuint       vbo_model_id; // ID do VAO onde estão armazenados os atributos do modelo
   GLuint       vbo_normal_id; // ID do VAO onde estão armazenados os atributos do modelo
   GLuint       vbo_projected_id; // ID do VAO onde estão armazenados os atributos do modelo
+
+  GLuint       vbo_vertex_id;
+  GLuint       vbo_texture_coords_id; // ID do VAO onde estão armazenados os atributos do modelo
 } scene_object_t;
 
 void AddModelToScene(scene_object_t *obj, model_t model);
-void DrawVirtualObject(scene_object_t obj, GLuint program_id);
+void AddTriangles(scene_object_t *obj, float *vertex_data, int vertex_count, float *texcoords_data, int texcoords_count);
+void DrawVirtualObject(scene_object_t obj);
 
 void UseOpenGL(scene_object_t *obj, model_t model);
 

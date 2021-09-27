@@ -20,9 +20,18 @@
 #include "scene.h"
 #include "close2gl.h"
 
+struct rgba
+{
+  float r, g, b, a;
+};
+
+rgba color_buffer[256*256] = { { 33.0f / 255.0f, 33.0f / 255.0f, 33.0f / 255.0f, 1.0f } };
+float depth_buffer[256][256] = { std::numeric_limits<float>::infinity() };
+
 Camera g_Camera;
 Input g_Input;
-scene_object_t g_Scene;
+scene_object_t g_OpenGLScene;
+scene_object_t g_Close2GLScene;
 model_t g_Model;
 
 void ErrorCallback(int error, const char* description);
@@ -65,7 +74,7 @@ struct State_t
   float camera_initial_nearplane = 0.1f;
 
   int polygon_mode = GL_FILL;
-  int front_face_mode = GL_CW;
+  int front_face_mode = GL_CCW;
 
   bool backface_culling = true;
   bool look_at = false;
@@ -78,7 +87,7 @@ struct State_t
 
   int shading_mode = PHONG_SHADING;
   bool lights_on = true;
-  int use_api = USE_OPENGL;
+  int use_api = USE_CLOSE2GL;
 
   float gui_object_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 } State;
@@ -100,17 +109,63 @@ int main( int argc, char* argv[] )
 
   InitImgui(window);
 
-  GpuProgram program = GpuProgram();
-  program.shader_files = 
+  OpenGL_GpuProgram opgl_program = OpenGL_GpuProgram();
+  opgl_program.shader_files = 
   {
     { GL_VERTEX_SHADER, "../res/shaders/default.vs" },
     { GL_FRAGMENT_SHADER, "../res/shaders/default.fs" },
   };
-  CreateGpuProgram(&program);
-  if (program.program_id == 0) {
+  CreateGpuProgram(&opgl_program);
+  if (opgl_program.program_id == 0) {
     std::cerr << "Linking failed" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  
+  Close2GL_GpuProgram c2gl_program = Close2GL_GpuProgram();
+  c2gl_program.shader_files = 
+  {
+    { GL_VERTEX_SHADER, "../res/shaders/close2gl.vs" },
+    { GL_FRAGMENT_SHADER, "../res/shaders/close2gl.fs" },
+  };
+  CreateGpuProgram(&c2gl_program);
+  if (c2gl_program.program_id == 0) {
+    std::cerr << "Linking failed" << std::endl;
+    std::exit(EXIT_FAILURE);
+  }
+
+  float vertex_data[] = {
+    -1.0f, -1.0f, 
+     1.0f, -1.0f, 
+     1.0f,  1.0f, 
+     1.0f,  1.0f, 
+    -1.0f,  1.0f, 
+    -1.0f, -1.0f };
+  float texture_coords[] = {
+    0.0f, 0.0f,
+    1.0f, 0.0f,
+    1.0f, 1.0f,
+    1.0f, 1.0f,
+    0.0f, 1.0f,
+    0.0f, 0.0f };
+  AddTriangles(&g_Close2GLScene, vertex_data, 12, texture_coords, 12);
+
+  for (int i = 0; i < 256; i++)
+    for (int j = 0; j < 256; j++)
+      if (i <= 128 && j <= 128)
+        color_buffer[j+i*256] = { 1.0f, 0.0f, 0.0f, 1.0f };
+      else if (i <= 128 && j > 128)
+        color_buffer[j+i*256] = { 0.0f, 1.0f, 0.0f, 1.0f };
+      else if (i > 128 && j <= 128)
+        color_buffer[j+i*256] = { 0.0f, 0.0f, 1.0f, 1.0f };
+      else if (i > 128 && j > 128)
+        color_buffer[j+i*256] = { 0.5f, 0.5f, 0.5f, 1.0f };
+
+  GLuint texture_id;
+  glGenTextures(1, &texture_id);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, texture_id);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 256, 0, GL_RGBA, GL_FLOAT, color_buffer);
 
   g_Camera.camera_view = LOOK_FREE;
 
@@ -193,25 +248,35 @@ int main( int argc, char* argv[] )
     {
       glm::mat4 view = g_Camera.Camera_View();
       glm::mat4 proj = g_Camera.Camera_Projection();
-      glm::mat4 model = g_Scene.model_space;
+      glm::mat4 model = g_OpenGLScene.model_space;
       glm::mat4 mvp = g_Camera.Camera_ViewProj() * model;
-      GLint vp[4];
-      glGetIntegerv(GL_VIEWPORT, vp);
-      glm::mat4 viewport_map = matrices::viewport(vp[0], vp[1], vp[2], vp[3]);
-      
-      glUseProgram(program.program_id);
-      glUniformMatrix4fv(program.model_view_proj_uniform, 1, GL_FALSE, glm::value_ptr(mvp));
-      glUniformMatrix4fv(program.view_uniform, 1, GL_FALSE, glm::value_ptr(view));
-      glUniformMatrix4fv(program.model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-      glUniform4fv(program.color_uniform, 1 , State.gui_object_color);
-      glUniform1i(program.shading_uniform, State.shading_mode);
-      glUniform1i(program.lighting_uniform, State.lights_on);
-      glUniform1i(program.close2gl_uniform, State.use_api);
 
       if (State.use_api == USE_CLOSE2GL)
-        c2gl_Transform_Vertices(&g_Scene, g_Model, mvp, viewport_map, State.backface_culling, State.front_face_mode);
+      {
+        GLint vp[4];
+        glGetIntegerv(GL_VIEWPORT, vp);
+        glm::mat4 viewport_map = matrices::viewport(vp[0], vp[1], vp[2], vp[3]);
 
-      DrawVirtualObject(g_Scene, program.program_id);
+        if (State.use_api == USE_CLOSE2GL)
+          c2gl_Transform_Vertices(&g_OpenGLScene, g_Model, mvp, viewport_map, State.backface_culling, State.front_face_mode);
+          
+        glUseProgram(c2gl_program.program_id);
+        glUniform1i(c2gl_program.texture_uniform, GL_TEXTURE0);
+
+        DrawVirtualObject(g_Close2GLScene);
+      }
+      else 
+      {
+        glUseProgram(opgl_program.program_id);
+        glUniformMatrix4fv(opgl_program.model_view_proj_uniform, 1, GL_FALSE, glm::value_ptr(mvp));
+        glUniformMatrix4fv(opgl_program.view_uniform, 1, GL_FALSE, glm::value_ptr(view));
+        glUniformMatrix4fv(opgl_program.model_uniform, 1, GL_FALSE, glm::value_ptr(model));
+        glUniform4fv(opgl_program.color_uniform, 1 , State.gui_object_color);
+        glUniform1i(opgl_program.shading_uniform, State.shading_mode);
+        glUniform1i(opgl_program.lighting_uniform, State.lights_on);
+
+        DrawVirtualObject(g_OpenGLScene);
+      }
     }
     
     GenerateGUI(dt);
@@ -402,7 +467,7 @@ void GenerateGUI(double dt)
   ImGui::Text("Render Mode");
 
   if (ImGui::RadioButton("OpenGL", &State.use_api, USE_OPENGL))
-    UseOpenGL(&current_scene, current_model); 
+    UseOpenGL(&g_OpenGLScene, g_Model); 
   ImGui::SameLine();
   ImGui::RadioButton("Close2GL", &State.use_api, USE_CLOSE2GL);
 
@@ -432,15 +497,15 @@ void GenerateGUI(double dt)
   ImGui::Separator();
   ImGui::Text("Camera");
 
-  ImGui::DragFloat("HFov", &camera.h_fov, PI/16.0f * dt, PI/16.0f, PI);
-  ImGui::DragFloat("VFov", &camera.v_fov, PI/16.0f * dt, PI/16.0f, PI);
+  ImGui::DragFloat("HFov", &g_Camera.h_fov, PI/16.0f * dt, PI/16.0f, PI);
+  ImGui::DragFloat("VFov", &g_Camera.v_fov, PI/16.0f * dt, PI/16.0f, PI);
   
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
-  ImGui::DragFloat("Near plane", &camera.nearplane, (camera.nearplane / 2.0f) * dt, 
+  ImGui::DragFloat("Near plane", &g_Camera.nearplane, (g_Camera.nearplane / 2.0f) * dt, 
       std::numeric_limits<float>::epsilon(), 
-      camera.farplane - std::numeric_limits<float>::epsilon());
-  ImGui::DragFloat("Far plane", &camera.farplane, (camera.farplane / 2.0f) * dt, 
-      camera.nearplane + std::numeric_limits<float>::epsilon(), 
+      g_Camera.farplane - std::numeric_limits<float>::epsilon());
+  ImGui::DragFloat("Far plane", &g_Camera.farplane, (g_Camera.farplane / 2.0f) * dt, 
+      g_Camera.nearplane + std::numeric_limits<float>::epsilon(), 
       std::numeric_limits<float>::max());
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
@@ -486,11 +551,11 @@ void OpenObjectFile()
 {
   try {
     g_Model = ReadModelFile(State.model_filename);
-    AddModelToScene(&g_Scene, g_Model);
-    glm::vec3 bbox_center = (g_Scene.bounding_box_max + g_Scene.bounding_box_min) / 2.0f;
-    g_Scene.model_space *= glm::translate(-bbox_center);
-    g_Scene.bounding_box_max -= bbox_center;
-    g_Scene.bounding_box_min -= bbox_center;
+    AddModelToScene(&g_OpenGLScene, g_Model);
+    glm::vec3 bbox_center = (g_OpenGLScene.bounding_box_max + g_OpenGLScene.bounding_box_min) / 2.0f;
+    g_OpenGLScene.model_space *= glm::translate(-bbox_center);
+    g_OpenGLScene.bounding_box_max -= bbox_center;
+    g_OpenGLScene.bounding_box_min -= bbox_center;
 
     State.gui_object_color[0] = g_Model.materials[0].diffuse[0];
     State.gui_object_color[1] = g_Model.materials[0].diffuse[1];
@@ -498,8 +563,8 @@ void OpenObjectFile()
     State.gui_object_color[3] = 1.0f;
 
     float bbox_size = std::max(
-      (g_Scene.bounding_box_max.x - g_Scene.bounding_box_min.x) * 2.0f,
-      (g_Scene.bounding_box_max.y - g_Scene.bounding_box_min.y) * 2.0f
+      (g_OpenGLScene.bounding_box_max.x - g_OpenGLScene.bounding_box_min.x) * 2.0f,
+      (g_OpenGLScene.bounding_box_max.y - g_OpenGLScene.bounding_box_min.y) * 2.0f
     ) / 2.0f;
     float distance = bbox_size / std::tan(g_Camera.h_fov / 2.0f);
 
