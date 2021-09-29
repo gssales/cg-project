@@ -72,42 +72,42 @@ new_buffer_data c2gl_Transform_Model(model_t model, glm::mat4 mvp, glm::mat4 vie
   return buffer_data;
 }
 
-void c2gl_Transform_Vertices(scene_object_t *obj, model_t model, glm::mat4 mvp, glm::mat4 viewport_map, bool culling_enabled, GLint render_mode)
-{
-  new_buffer_data bf_data = c2gl_Transform_Model(model, mvp, viewport_map, culling_enabled, render_mode);
-  std::vector<float> new_vx = bf_data.new_vertices;
-  std::vector<float> new_nl = bf_data.new_normals;
-  std::vector<float> proj = bf_data.projected;
+// void c2gl_Transform_Vertices(scene_object_t *obj, model_t model, glm::mat4 mvp, glm::mat4 viewport_map, bool culling_enabled, GLint render_mode)
+// {
+//   new_buffer_data bf_data = c2gl_Transform_Model(model, mvp, viewport_map, culling_enabled, render_mode);
+//   std::vector<float> new_vx = bf_data.new_vertices;
+//   std::vector<float> new_nl = bf_data.new_normals;
+//   std::vector<float> proj = bf_data.projected;
   
-  obj->first_index = 0;
-  obj->vertex_count = new_vx.size();
+//   obj->first_index = 0;
+//   obj->vertex_count = new_vx.size();
   
-  glBindVertexArray(obj->vao_id);
+//   glBindVertexArray(obj->vao_id);
 
-  GLint number_of_dimensions = 4;
-  GLint location = 0;
-  glBindBuffer(GL_ARRAY_BUFFER, obj->vbo_model_id);
-  glBufferData(GL_ARRAY_BUFFER, new_vx.size() * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
-  glBufferSubData(GL_ARRAY_BUFFER, 0, new_vx.size() * sizeof(GL_FLOAT), new_vx.data());
-  glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
-  glEnableVertexAttribArray(location);
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
+//   GLint number_of_dimensions = 4;
+//   GLint location = 0;
+//   glBindBuffer(GL_ARRAY_BUFFER, obj->vbo_model_id);
+//   glBufferData(GL_ARRAY_BUFFER, new_vx.size() * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
+//   glBufferSubData(GL_ARRAY_BUFFER, 0, new_vx.size() * sizeof(GL_FLOAT), new_vx.data());
+//   glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
+//   glEnableVertexAttribArray(location);
+//   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-  location = 1;
-  glBindBuffer(GL_ARRAY_BUFFER, obj->vbo_normal_id);
-  glBufferData(GL_ARRAY_BUFFER, new_nl.size() * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
-  glBufferSubData(GL_ARRAY_BUFFER, 0, new_nl.size() * sizeof(GL_FLOAT), new_nl.data());
-  glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
-  glEnableVertexAttribArray(location);
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
+//   location = 1;
+//   glBindBuffer(GL_ARRAY_BUFFER, obj->vbo_normal_id);
+//   glBufferData(GL_ARRAY_BUFFER, new_nl.size() * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
+//   glBufferSubData(GL_ARRAY_BUFFER, 0, new_nl.size() * sizeof(GL_FLOAT), new_nl.data());
+//   glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
+//   glEnableVertexAttribArray(location);
+//   glBindBuffer(GL_ARRAY_BUFFER, 0);
   
-  location = 2;
-  glBindBuffer(GL_ARRAY_BUFFER, obj->vbo_projected_id);
-  glBufferData(GL_ARRAY_BUFFER, proj.size() * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
-  glBufferSubData(GL_ARRAY_BUFFER, 0, proj.size() * sizeof(GL_FLOAT), proj.data());
-  glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
-  glEnableVertexAttribArray(location);
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
+//   location = 2;
+//   glBindBuffer(GL_ARRAY_BUFFER, obj->vbo_projected_id);
+//   glBufferData(GL_ARRAY_BUFFER, proj.size() * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
+//   glBufferSubData(GL_ARRAY_BUFFER, 0, proj.size() * sizeof(GL_FLOAT), proj.data());
+//   glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
+//   glEnableVertexAttribArray(location);
+//   glBindBuffer(GL_ARRAY_BUFFER, 0);
 
-  glBindVertexArray(0);
-}
+//   glBindVertexArray(0);
+// }

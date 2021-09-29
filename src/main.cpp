@@ -13,25 +13,17 @@
 #include <glm/vec4.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-#include "graphics/gpu_program.h"
 #include "graphics/model.h"
 #include "graphics/camera.h"
 #include "input.h"
 #include "scene.h"
 #include "close2gl.h"
 
-struct rgba
-{
-  float r, g, b, a;
-};
-
-rgba color_buffer[256*256] = { { 33.0f / 255.0f, 33.0f / 255.0f, 33.0f / 255.0f, 1.0f } };
-float depth_buffer[256][256] = { std::numeric_limits<float>::infinity() };
-
 Camera g_Camera;
 Input g_Input;
-scene_object_t g_OpenGLScene;
-scene_object_t g_Close2GLScene;
+OpenGL_Scene g_OpenGLScene;
+Close2GL_Scene g_Close2GLScene;
+scene_state_t g_SceneState;
 model_t g_Model;
 
 void ErrorCallback(int error, const char* description);
@@ -73,10 +65,10 @@ struct State_t
   float camera_initial_farplane = 1000.0f;
   float camera_initial_nearplane = 0.1f;
 
-  int polygon_mode = GL_FILL;
-  int front_face_mode = GL_CCW;
+  // int polygon_mode = GL_FILL;
+  // int front_face_mode = GL_CCW;
 
-  bool backface_culling = true;
+  // bool backface_culling = true;
   bool look_at = false;
   bool camera_separate_controls = true;
   int camera_control_action = CAMERA_CONTROLS_TRANSLATE;
@@ -85,11 +77,11 @@ struct State_t
 
   char model_filename[512] = "..\\res\\models\\cube.in";
 
-  int shading_mode = PHONG_SHADING;
-  bool lights_on = true;
+  // int shading_mode = PHONG_SHADING;
+  // bool lights_on = true;
   int use_api = USE_CLOSE2GL;
 
-  float gui_object_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+  // float gui_object_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 } State;
 
 int main( int argc, char* argv[] )
@@ -109,72 +101,69 @@ int main( int argc, char* argv[] )
 
   InitImgui(window);
 
-  OpenGL_GpuProgram opgl_program = OpenGL_GpuProgram();
-  opgl_program.shader_files = 
+  g_OpenGLScene.shader.shader_files = 
   {
     { GL_VERTEX_SHADER, "../res/shaders/default.vs" },
     { GL_FRAGMENT_SHADER, "../res/shaders/default.fs" },
   };
-  CreateGpuProgram(&opgl_program);
-  if (opgl_program.program_id == 0) {
+  CreateGpuProgram(&g_OpenGLScene.shader);
+  if (g_OpenGLScene.shader.program_id == 0) {
     std::cerr << "Linking failed" << std::endl;
     std::exit(EXIT_FAILURE);
   }
   
-  Close2GL_GpuProgram c2gl_program = Close2GL_GpuProgram();
-  c2gl_program.shader_files = 
+  g_Close2GLScene.shader.shader_files = 
   {
     { GL_VERTEX_SHADER, "../res/shaders/close2gl.vs" },
     { GL_FRAGMENT_SHADER, "../res/shaders/close2gl.fs" },
   };
-  CreateGpuProgram(&c2gl_program);
-  if (c2gl_program.program_id == 0) {
+  CreateGpuProgram(&g_Close2GLScene.shader);
+  if (g_Close2GLScene.shader.program_id == 0) {
     std::cerr << "Linking failed" << std::endl;
     std::exit(EXIT_FAILURE);
   }
+  g_Close2GLScene.LoadTrianglesToScene();
+  
+  
+  // float vertex_data[] = {
+  //   -1.0f, -1.0f, 
+  //    1.0f, -1.0f, 
+  //    1.0f,  1.0f, 
+  //    1.0f,  1.0f, 
+  //   -1.0f,  1.0f, 
+  //   -1.0f, -1.0f };
+  // float texture_coords[] = {
+  //   0.0f, 0.0f,
+  //   1.0f, 0.0f,
+  //   1.0f, 1.0f,
+  //   1.0f, 1.0f,
+  //   0.0f, 1.0f,
+  //   0.0f, 0.0f };
+  // AddTriangles(&g_Close2GLScene, vertex_data, 12, texture_coords, 12);
 
-  float vertex_data[] = {
-    -1.0f, -1.0f, 
-     1.0f, -1.0f, 
-     1.0f,  1.0f, 
-     1.0f,  1.0f, 
-    -1.0f,  1.0f, 
-    -1.0f, -1.0f };
-  float texture_coords[] = {
-    0.0f, 0.0f,
-    1.0f, 0.0f,
-    1.0f, 1.0f,
-    1.0f, 1.0f,
-    0.0f, 1.0f,
-    0.0f, 0.0f };
-  AddTriangles(&g_Close2GLScene, vertex_data, 12, texture_coords, 12);
+  // for (int i = 0; i < 256; i++)
+  //   for (int j = 0; j < 256; j++)
+  //     if (i <= 128 && j <= 128)
+  //       color_buffer[j+i*256] = { 1.0f, 0.0f, 0.0f, 1.0f };
+  //     else if (i <= 128 && j > 128)
+  //       color_buffer[j+i*256] = { 0.0f, 1.0f, 0.0f, 1.0f };
+  //     else if (i > 128 && j <= 128)
+  //       color_buffer[j+i*256] = { 0.0f, 0.0f, 1.0f, 1.0f };
+  //     else if (i > 128 && j > 128)
+  //       color_buffer[j+i*256] = { 0.5f, 0.5f, 0.5f, 1.0f };
 
-  for (int i = 0; i < 256; i++)
-    for (int j = 0; j < 256; j++)
-      if (i <= 128 && j <= 128)
-        color_buffer[j+i*256] = { 1.0f, 0.0f, 0.0f, 1.0f };
-      else if (i <= 128 && j > 128)
-        color_buffer[j+i*256] = { 0.0f, 1.0f, 0.0f, 1.0f };
-      else if (i > 128 && j <= 128)
-        color_buffer[j+i*256] = { 0.0f, 0.0f, 1.0f, 1.0f };
-      else if (i > 128 && j > 128)
-        color_buffer[j+i*256] = { 0.5f, 0.5f, 0.5f, 1.0f };
-
-  GLuint texture_id;
-  glGenTextures(1, &texture_id);
-  glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, texture_id);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 256, 0, GL_RGBA, GL_FLOAT, color_buffer);
+  // GLuint texture_id;
+  // glGenTextures(1, &texture_id);
+  // glActiveTexture(GL_TEXTURE0);
+  // glBindTexture(GL_TEXTURE_2D, texture_id);
+  // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 256, 0, GL_RGBA, GL_FLOAT, color_buffer);
 
   g_Camera.camera_view = LOOK_FREE;
 
-  glEnable(GL_DEPTH_TEST);
-  glDepthFunc(GL_LEQUAL);
-  glEnable(GL_CULL_FACE);
-  glCullFace(GL_BACK);
-  glFrontFace(GL_CW);
-  
+  // g_OpenGLScene.Enable(g_SceneState);
+  g_Close2GLScene.Enable(g_SceneState);
+
   glLineWidth(1.5f);
   glPointSize(3.0f);
 
@@ -188,7 +177,7 @@ int main( int argc, char* argv[] )
 
     update_fps += dt;
     count_frames++;
-     if ( update_fps >= 0.5 ){
+    if ( update_fps >= 0.5 ){
       double fps = double(count_frames) / dt;
 
       std::stringstream ss;
@@ -198,7 +187,7 @@ int main( int argc, char* argv[] )
 
       count_frames = 0;
       update_fps = 0.0;
-     }
+    }
 
     if (g_Input.GetKeyState(GLFW_KEY_ESCAPE).is_pressed || State.close)
       glfwSetWindowShouldClose(window, GL_TRUE);
@@ -222,61 +211,37 @@ int main( int argc, char* argv[] )
 
     g_Camera.screen_ratio = State.screen_ratio;
     
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    // glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    g_Close2GLScene.New_Frame();
     
-    glPolygonMode(GL_FRONT_AND_BACK, State.polygon_mode);
+    // glPolygonMode(GL_FRONT_AND_BACK, State.polygon_mode);
 
-    if (State.use_api == USE_CLOSE2GL)
-      glDisable(GL_CULL_FACE);
-    else 
-    {
-      if (State.backface_culling )
-        glEnable(GL_CULL_FACE);
-      else
-        glDisable(GL_CULL_FACE);
+    // if (State.use_api == USE_CLOSE2GL)
+    //   glDisable(GL_CULL_FACE);
+    // else 
+    // {
+    //   if (State.backface_culling )
+    //     glEnable(GL_CULL_FACE);
+    //   else
+    //     glDisable(GL_CULL_FACE);
         
-      glFrontFace(State.front_face_mode);
-    }
+    //   glFrontFace(State.front_face_mode);
+    // }
     
     // Start the Dear ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    if (State.model_loaded)
+    if (State.model_loaded || true)
     {
       glm::mat4 view = g_Camera.Camera_View();
       glm::mat4 proj = g_Camera.Camera_Projection();
-      glm::mat4 model = g_OpenGLScene.model_space;
-      glm::mat4 mvp = g_Camera.Camera_ViewProj() * model;
 
-      if (State.use_api == USE_CLOSE2GL)
-      {
-        GLint vp[4];
-        glGetIntegerv(GL_VIEWPORT, vp);
-        glm::mat4 viewport_map = matrices::viewport(vp[0], vp[1], vp[2], vp[3]);
+        // g_OpenGLScene.Render(g_SceneState, view, proj);
+        g_Close2GLScene.Render(g_SceneState, view, proj);
 
-        if (State.use_api == USE_CLOSE2GL)
-          c2gl_Transform_Vertices(&g_OpenGLScene, g_Model, mvp, viewport_map, State.backface_culling, State.front_face_mode);
-          
-        glUseProgram(c2gl_program.program_id);
-        glUniform1i(c2gl_program.texture_uniform, GL_TEXTURE0);
-
-        DrawVirtualObject(g_Close2GLScene);
-      }
-      else 
-      {
-        glUseProgram(opgl_program.program_id);
-        glUniformMatrix4fv(opgl_program.model_view_proj_uniform, 1, GL_FALSE, glm::value_ptr(mvp));
-        glUniformMatrix4fv(opgl_program.view_uniform, 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(opgl_program.model_uniform, 1, GL_FALSE, glm::value_ptr(model));
-        glUniform4fv(opgl_program.color_uniform, 1 , State.gui_object_color);
-        glUniform1i(opgl_program.shading_uniform, State.shading_mode);
-        glUniform1i(opgl_program.lighting_uniform, State.lights_on);
-
-        DrawVirtualObject(g_OpenGLScene);
-      }
     }
     
     GenerateGUI(dt);
@@ -337,6 +302,8 @@ GLFWwindow* CreateGLFWwindow(int width, int height, const char* title)
   glfwSetFramebufferSizeCallback(window, FramebufferSizeCallback);
   glfwSetWindowSize(window, 800, 600);
   State.screen_ratio = 4.0f/3.0f;
+  g_SceneState.screen_width = 800;
+  g_SceneState.screen_height = 600;
 
   glfwMakeContextCurrent(window);
   return window;
@@ -466,32 +433,32 @@ void GenerateGUI(double dt)
 
   ImGui::Text("Render Mode");
 
-  if (ImGui::RadioButton("OpenGL", &State.use_api, USE_OPENGL))
-    UseOpenGL(&g_OpenGLScene, g_Model); 
-  ImGui::SameLine();
-  ImGui::RadioButton("Close2GL", &State.use_api, USE_CLOSE2GL);
+  // if (ImGui::RadioButton("OpenGL", &State.use_api, USE_OPENGL))
+  //   UseOpenGL(&g_OpenGLScene, g_Model); 
+  // ImGui::SameLine();
+  // ImGui::RadioButton("Close2GL", &State.use_api, USE_CLOSE2GL);
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
-  ImGui::RadioButton("Points", &State.polygon_mode, GL_POINT);
-  ImGui::RadioButton("Wireframe", &State.polygon_mode, GL_LINE);
-  ImGui::RadioButton("Solid", &State.polygon_mode, GL_FILL);
+  ImGui::RadioButton("Points", &g_SceneState.polygon_mode, GL_POINT);
+  ImGui::RadioButton("Wireframe", &g_SceneState.polygon_mode, GL_LINE);
+  ImGui::RadioButton("Solid", &g_SceneState.polygon_mode, GL_FILL);
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::Text("Shading");
-  ImGui::RadioButton("Gouraud AD", &State.shading_mode, GOURAUD_AD_SHADING); ImGui::SameLine();
-  ImGui::RadioButton("Gouraud ADS", &State.shading_mode, GOURAUD_ADS_SHADING);
-  ImGui::RadioButton("Phong", &State.shading_mode, PHONG_SHADING); ImGui::SameLine();
-  ImGui::RadioButton("None", &State.shading_mode, NO_SHADING);
+  ImGui::RadioButton("Gouraud AD", &g_SceneState.shading_mode, GOURAUD_AD_SHADING); ImGui::SameLine();
+  ImGui::RadioButton("Gouraud ADS", &g_SceneState.shading_mode, GOURAUD_ADS_SHADING);
+  ImGui::RadioButton("Phong", &g_SceneState.shading_mode, PHONG_SHADING); ImGui::SameLine();
+  ImGui::RadioButton("None", &g_SceneState.shading_mode, NO_SHADING);
   
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
-  ImGui::Checkbox("Lights On", &State.lights_on);
+  ImGui::Checkbox("Lights On", &g_SceneState.lights_on);
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
-  ImGui::Checkbox("Backface Culling", &State.backface_culling);
+  ImGui::Checkbox("Backface Culling", &g_SceneState.face_culling);
 
   ImGui::Text("Orientation");
-  ImGui::RadioButton("CW", &State.front_face_mode, GL_CW); ImGui::SameLine();
-  ImGui::RadioButton("CCW", &State.front_face_mode, GL_CCW);
+  ImGui::RadioButton("CW", &g_SceneState.front_face, GL_CW); ImGui::SameLine();
+  ImGui::RadioButton("CCW", &g_SceneState.front_face, GL_CCW);
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::Separator();
@@ -534,7 +501,7 @@ void GenerateGUI(double dt)
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::Separator();
   ImGui::Text("Model");
-  ImGui::ColorEdit4("Object Color", State.gui_object_color);
+  ImGui::ColorEdit4("Object Color", g_SceneState.gui_object_color);
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::InputText("File Path", State.model_filename, IM_ARRAYSIZE(State.model_filename));
@@ -551,16 +518,17 @@ void OpenObjectFile()
 {
   try {
     g_Model = ReadModelFile(State.model_filename);
-    AddModelToScene(&g_OpenGLScene, g_Model);
+    g_OpenGLScene.LoadModelToScene(g_Model);
+    // AddModelToScene(&g_OpenGLScene, g_Model);
     glm::vec3 bbox_center = (g_OpenGLScene.bounding_box_max + g_OpenGLScene.bounding_box_min) / 2.0f;
-    g_OpenGLScene.model_space *= glm::translate(-bbox_center);
+    g_OpenGLScene.model_matrix *= glm::translate(-bbox_center);
     g_OpenGLScene.bounding_box_max -= bbox_center;
     g_OpenGLScene.bounding_box_min -= bbox_center;
 
-    State.gui_object_color[0] = g_Model.materials[0].diffuse[0];
-    State.gui_object_color[1] = g_Model.materials[0].diffuse[1];
-    State.gui_object_color[2] = g_Model.materials[0].diffuse[2];
-    State.gui_object_color[3] = 1.0f;
+    g_SceneState.gui_object_color[0] = g_Model.materials[0].diffuse[0];
+    g_SceneState.gui_object_color[1] = g_Model.materials[0].diffuse[1];
+    g_SceneState.gui_object_color[2] = g_Model.materials[0].diffuse[2];
+    g_SceneState.gui_object_color[3] = 1.0f;
 
     float bbox_size = std::max(
       (g_OpenGLScene.bounding_box_max.x - g_OpenGLScene.bounding_box_min.x) * 2.0f,
@@ -625,4 +593,9 @@ void FramebufferSizeCallback(GLFWwindow* window, int width, int height)
 {
   glViewport(0, 0, width, height);
   State.screen_ratio = (float)width / height;
+  g_SceneState.screen_width = width;
+  g_SceneState.screen_height = height;
+
+  if (State.use_api == USE_CLOSE2GL)
+    g_Close2GLScene.ResizeBuffers(g_SceneState);
 }
