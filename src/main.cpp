@@ -234,7 +234,7 @@ int main( int argc, char* argv[] )
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    if (State.model_loaded || true)
+    if (State.model_loaded)
     {
       glm::mat4 view = g_Camera.Camera_View();
       glm::mat4 proj = g_Camera.Camera_Projection();
@@ -413,12 +413,15 @@ void UpdateCamera_SeparateControls(double dt)
     if (State.camera_control_action == CAMERA_CONTROLS_TRANSLATE)
     {
       float speed = dy * 0.1f * matrices::length(cam_space * ORIGIN4)/2.0f * dt;
+      if (g_Input.GetKeyState(GLFW_KEY_LEFT_SHIFT).is_down)
+        speed *= 0.1;
       g_Camera.Move(axis * speed);
     }
     else if (State.camera_control_action == CAMERA_CONTROLS_ROTATE)
     {
-      PrintVec3(axis);
       float angle = -dy * dt * 0.1;
+      if (g_Input.GetKeyState(GLFW_KEY_LEFT_SHIFT).is_down)
+        angle *= 0.1;
       g_Camera.Rotate(axis, angle);
     }
 
@@ -437,6 +440,8 @@ void GenerateGUI(double dt)
   //   UseOpenGL(&g_OpenGLScene, g_Model); 
   // ImGui::SameLine();
   // ImGui::RadioButton("Close2GL", &State.use_api, USE_CLOSE2GL);
+
+  g_SceneState.debug = ImGui::Button("debug");
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::RadioButton("Points", &g_SceneState.polygon_mode, GL_POINT);
@@ -518,6 +523,7 @@ void OpenObjectFile()
 {
   try {
     g_Model = ReadModelFile(State.model_filename);
+    g_Close2GLScene.SetModel(g_Model);
     g_OpenGLScene.LoadModelToScene(g_Model);
     // AddModelToScene(&g_OpenGLScene, g_Model);
     glm::vec3 bbox_center = (g_OpenGLScene.bounding_box_max + g_OpenGLScene.bounding_box_min) / 2.0f;
