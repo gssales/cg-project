@@ -42,6 +42,8 @@ typedef struct
 {
   glm::vec4 vertices[3];
   glm::vec4 normals[3];
+  glm::vec4 vp_vertices[3];
+  glm::vec4 ccs_vertices[3];
   glm::vec4 face_normal;
 } triangle_t;
 
@@ -58,7 +60,7 @@ typedef struct
 {
   glm::vec4 vertex_top;
   glm::vec4 vertex_bottom;
-  glm::vec3 vertex_delta;
+  glm::vec4 vertex_delta;
   float inc_x, inc_z;
   interpolating_attr_t top;
   interpolating_attr_t bottom;
@@ -107,7 +109,6 @@ public:
   GLuint texture_id;
   
   model_t model;
-  std::vector<triangle_t> ccs_model;
   std::vector<triangle_t> triangles;
 
   int buffer_size;
@@ -121,8 +122,8 @@ public:
 
   void SetModel(model_t model);
   void ResizeBuffers(scene_state_t state);
-  void TransformModel(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix);
-  void Rasterize(scene_state_t state, glm::mat4 projection_matrix);
+  void TransformModel(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix, glm::mat4 viewport_matrix);
+  void Rasterize(scene_state_t state, glm::mat4 projection_matrix, glm::mat4 viewport_matrix);
   edge_t FindEdge(glm::vec4 v0, interpolating_attr_t v0_attr, glm::vec4 v1, interpolating_attr_t v1_attr);
   scanline_t FindScanline(glm::vec4 v0, interpolating_attr_t v0_attr, glm::vec4 v1, interpolating_attr_t v1_attr);
   edge_t* OrderEdges(edge_t* edges);

@@ -1,5 +1,9 @@
 #include "scene.h"
 
+float clamp(float n, float lower, float upper) {
+  return std::max(lower, std::min(n, upper));
+}
+
 void SuperScene::DrawScene()
 {
   glBindVertexArray(this->vao_id);
@@ -196,9 +200,11 @@ void Close2GL_Scene::Enable(scene_state_t state)
 
 void Close2GL_Scene::Render(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix)
 {  
-  this->TransformModel(state, view_matrix, projection_matrix);
+  glm::mat4 viewport_map = matrices::viewport(0, 0, state.screen_width, state.screen_height);
+
+  this->TransformModel(state, view_matrix, projection_matrix, viewport_map);
   
-  this->Rasterize(state, projection_matrix);
+  this->Rasterize(state, projection_matrix, viewport_map);
         
   glBindTexture(GL_TEXTURE_2D, this->texture_id);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -246,45 +252,66 @@ void Close2GL_Scene::SetModel(model_t model)
   this->model = model;
 }
 
-void Close2GL_Scene::TransformModel(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix)
+void Close2GL_Scene::TransformModel(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix, glm::mat4 viewport_matrix)
 {
   triangles.clear();
-  ccs_model.clear();
 
-  glm::mat4 mvp = projection_matrix * view_matrix * model_matrix;
-  glm::mat4 viewport_map = matrices::viewport(0, 0, state.screen_width, state.screen_height);
+  glm::mat4 to_ccs = view_matrix * model_matrix;
+  glm::mat4 mvp = projection_matrix * to_ccs;
 
-  std::vector<float> vertices = this->model.vertices;
-  std::vector<float> normals = this->model.normals;
-  for (int i = 0; i < vertices.size(); i += 12)
+  std::vector<float> *vertices = &this->model.vertices;
+  std::vector<float> *normals = &this->model.normals;
+  for (int i = 0; i < vertices->size(); i += 12)
   {
+    // OBJECT SPACE
     triangle_t t;
-    t.vertices[0] = mvp * glm::vec4(  vertices[i], vertices[i+1], vertices[i+2], vertices[i+3]);
-    t.vertices[1] = mvp * glm::vec4(vertices[i+4], vertices[i+5], vertices[i+6], vertices[i+7]);
-    t.vertices[2] = mvp * glm::vec4(vertices[i+8], vertices[i+9], vertices[i+10], vertices[i+11]);
+    t.ccs_vertices[0] = to_ccs * glm::vec4(  (*vertices)[i], (*vertices)[i+1], (*vertices)[i+2], (*vertices)[i+3]);
+    t.ccs_vertices[1] = to_ccs * glm::vec4((*vertices)[i+4], (*vertices)[i+5], (*vertices)[i+6], (*vertices)[i+7]);
+    t.ccs_vertices[2] = to_ccs * glm::vec4((*vertices)[i+8], (*vertices)[i+9], (*vertices)[i+10], (*vertices)[i+11]);
+    // CAMERA/EYE SPACE
+
+    t.vertices[0] = projection_matrix * t.ccs_vertices[0];
+    t.vertices[1] = projection_matrix * t.ccs_vertices[1];
+    t.vertices[2] = projection_matrix * t.ccs_vertices[2];
+    // HOMOGENUOUS CLIPPING SPACE
 
     if (t.vertices[0].w <= 0 || t.vertices[1].w <= 0 || t.vertices[2].w <= 0)
       continue;
-      
+
     t.vertices[0] /= t.vertices[0].w;
     t.vertices[1] /= t.vertices[1].w;
     t.vertices[2] /= t.vertices[2].w;
+    // NORMALIZED DEVICE SPACE
+
+    if (std::abs(t.vertices[0].x) > 1.0f 
+        || std::abs(t.vertices[0].y) > 1.0f 
+        || std::abs(t.vertices[0].z) > 1.0f)
+      continue;
+
+    if (std::abs(t.vertices[1].x) > 1.0f 
+        || std::abs(t.vertices[1].y) > 1.0f 
+        || std::abs(t.vertices[1].z) > 1.0f)
+      continue;
+
+    if (std::abs(t.vertices[2].x) > 1.0f 
+        || std::abs(t.vertices[2].y) > 1.0f 
+        || std::abs(t.vertices[2].z) > 1.0f)
+      continue;
+
+    t.vp_vertices[0] = viewport_matrix * t.vertices[0];
+    t.vp_vertices[1] = viewport_matrix * t.vertices[1];
+    t.vp_vertices[2] = viewport_matrix * t.vertices[2];
 
     if (state.face_culling)
     {
-      glm::vec4 vp_vertices[3];
-      vp_vertices[0] = viewport_map * t.vertices[0];
-      vp_vertices[1] = viewport_map * t.vertices[1];
-      vp_vertices[2] = viewport_map * t.vertices[2];
-
-      bool is_front_facing = FaceCulling(vp_vertices, state.front_face);
+      bool is_front_facing = FaceCulling(t.vp_vertices, state.front_face);
       if (!is_front_facing)
         continue;
     }
 
-    t.normals[0] = glm::vec4(  normals[i], normals[i+1], normals[i+2], normals[i+3]);
-    t.normals[1] = glm::vec4(normals[i+4], normals[i+5], normals[i+6], normals[i+7]);
-    t.normals[2] = glm::vec4(normals[i+8], normals[i+9], normals[i+10], normals[i+11]);
+    t.normals[0] = mvp * glm::vec4(  (*normals)[i], (*normals)[i+1], (*normals)[i+2], (*normals)[i+3]);
+    t.normals[1] = mvp * glm::vec4((*normals)[i+4], (*normals)[i+5], (*normals)[i+6], (*normals)[i+7]);
+    t.normals[2] = mvp * glm::vec4((*normals)[i+8], (*normals)[i+9], (*normals)[i+10], (*normals)[i+11]);
 
     glm::vec4 u = t.vertices[1] - t.vertices[0];
     glm::vec4 v = t.vertices[2] - t.vertices[0];
@@ -293,15 +320,12 @@ void Close2GL_Scene::TransformModel(scene_state_t state, glm::mat4 view_matrix, 
     t.face_normal.z = u.x*v.y - u.y*v.x;
     t.face_normal.w = 0.0f;
 
-
     this->triangles.push_back(t);
   }
 }
 
-void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 projection_matrix)
+void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 projection_matrix, glm::mat4 viewport_matrix)
 {
-  glm::mat4 viewport_map = matrices::viewport(0, 0, state.screen_width, state.screen_height);
-  glm::mat4 inv_proj = glm::inverse(projection_matrix);
 
   glm::vec4 color = glm::vec4(state.gui_object_color[0], state.gui_object_color[1], state.gui_object_color[2], state.gui_object_color[3]);
   glm::vec4 colors[3] = { glm::vec4(1.0, 0.0, 0.0, 1.0), glm::vec4(0.0, 1.0, 0.0, 1.0), glm::vec4(0.0, 0.0, 1.0, 1.0) };
@@ -309,15 +333,13 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 projection_matrix)
   for (int i = 0; i < this->triangles.size(); i++)
   {
     triangle_t t = this->triangles[i];
-    glm::vec4 vp_vertices[3];
     interpolating_attr_t vertex_attrs[3];
     for (int a = 0; a < 3; a++)
     {
       float w = t.vertices[a].w;
-      vp_vertices[a] = viewport_map * t.vertices[a];
       interpolating_attr_t attrs;
       attrs.vertex_p   = t.vertices[a] / w;
-      attrs.vertex_ccs = (inv_proj * t.vertices[a]) / w;
+      attrs.vertex_ccs = t.ccs_vertices[a] / w;
       attrs.normal     = t.normals[a] / w;
       attrs.color_rgba = colors[a] / w; // vertex color shader
       attrs.ww        /= w;
@@ -330,12 +352,23 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 projection_matrix)
     {
       int next_e = (e+1) % 3;
       edges[e] = this->FindEdge(
-        vp_vertices[e],      vertex_attrs[e],
-        vp_vertices[next_e], vertex_attrs[next_e]
+        t.vp_vertices[e],      vertex_attrs[e],
+        t.vp_vertices[next_e], vertex_attrs[next_e]
       );
+      if (state.debug)
+      {
+        std::cout << e << std::endl;
+        // PrintVec4(t.vp_vertices[e]);
+        // PrintVec4(t.vp_vertices[next_e]);
+        PrintEdge(edges[e]);
+        // PrintVec4(edges[e].vertex_delta);
+      }
     }
 
     edges = this->OrderEdges(edges);
+    for (int e = 0; e < 3; e++)
+      if (state.debug)
+        PrintEdge(edges[e]);
     
     int active_edge = 1;
     int max_inc = std::floor(edges[0].vertex_delta.y);
@@ -360,31 +393,38 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 projection_matrix)
       
       p_b = edges[active_edge].vertex_top;
       if (active_edge == 2)
-        inc = inc - edges[1].vertex_delta.y -1;
+        inc -= edges[1].vertex_delta.y;
       p_b.y = p_b.y + inc;
-      p_b.x = p_b.x + inc * edges[active_edge].inc_x;
+      p_b.x = clamp(p_b.x + inc * edges[active_edge].inc_x,
+          std::min(edges[active_edge].vertex_top.x, edges[active_edge].vertex_bottom.x),
+          std::max(edges[active_edge].vertex_top.x, edges[active_edge].vertex_bottom.x));
       p_b.z = p_b.z + inc * edges[active_edge].inc_z;
       y = std::floor(p_b.y);
       x = std::floor(p_b.x);
 
-      if (y < edges[active_edge].vertex_bottom.y 
-          && (x <= edges[active_edge].vertex_bottom.x && x >= edges[active_edge].vertex_top.x)
-          || (x >= edges[active_edge].vertex_bottom.x && x <= edges[active_edge].vertex_top.x))
-      {
-        attr_b = this->Interpolate(edges[active_edge].bottom, edges[active_edge].top, 0, edges[active_edge].vertex_delta.y, inc);
+      attr_b = this->Interpolate(edges[active_edge].bottom, edges[active_edge].top, 0, edges[active_edge].vertex_delta.y, inc);
 
-        this->ChangeBuffer(state, x, y, p_b.z, vec4_to_rgba(attr_b.color_rgba / attr_b.ww));
-      }
-
-      if (active_edge == 1 && y > edges[1].vertex_bottom.y)
-        active_edge = 2;
-
+      this->ChangeBuffer(state, x, y, p_b.z, vec4_to_rgba(attr_b.color_rgba / attr_b.ww));
+        
       if (state.polygon_mode == GL_FILL)
       {
-        p_a.y -= 1;
+        // p_a.y -= 1;
+        float my = (p_a.y + p_b.y) / 2.0f;
+        p_a.y = my;
+        p_b.y = my;
+        if (state.debug)
+        {
+          // PrintVec4(p_a);
+          // PrintEdge(edges[active_edge]); // quando fica horizontal tem alguma aresta que zera
+          // PrintVec4(edges[active_edge].vertex_bottom);
+          // PrintVec4(p_b);
+        }
         scanline_t sl = this->FindScanline(glm::make_vec4(p_a), attr_a, glm::make_vec4(p_b), attr_b);
         this->RasterScanline(state, sl);
       }
+
+      if (active_edge == 1 && p_b.y > edges[1].vertex_bottom.y)
+        active_edge = 2;
     }
   }
 }
@@ -406,7 +446,7 @@ edge_t Close2GL_Scene::FindEdge(glm::vec4 v0, interpolating_attr_t v0_attr, glm:
   }
 
   glm::vec4 d = e.vertex_bottom - e.vertex_top;
-  if (d.y != 0.0)
+  if (std::abs(d.y) >= 1.0)
   {
     e.inc_x = d.x / d.y;
     e.inc_z = d.z / d.y;
@@ -439,10 +479,14 @@ scanline_t Close2GL_Scene::FindScanline(glm::vec4 v0, interpolating_attr_t v0_at
 
   glm::vec4 d = sl.vertex_bottom - sl.vertex_top;
   sl.inc_x = 1;
-  if (d.y != 0.0)
+  if (std::abs(d.y) >= 1.0)
+  {
     sl.inc_z = d.z / d.y;
+  }
   else
-    sl.inc_z = 0.0;
+  {
+    sl.inc_z = d.z;
+  }
   sl.vertex_delta = d;
   
   return sl;
@@ -450,23 +494,30 @@ scanline_t Close2GL_Scene::FindScanline(glm::vec4 v0, interpolating_attr_t v0_at
 
 edge_t* Close2GL_Scene::OrderEdges(edge_t* edges)
 {
-  float bottom_y = 0.0f, top_y = std::numeric_limits<float>::max();
+  float top_y = std::numeric_limits<float>::max(), tallest_y = 0.0f;
   for (int i = 0; i < 3; i++)
   {
-    bottom_y = std::max(bottom_y, edges[i].vertex_bottom.y);
-    top_y    = std::min(top_y,    edges[i].vertex_top.y);
+    tallest_y = std::max(tallest_y, std::abs(edges[i].vertex_delta.y));
+    top_y     = std::min(top_y,    edges[i].vertex_top.y);
+    has_horizontal_edge = (edges[i].vertex_delta.y == 0.0f);
   }
 
   edge_t* new_edges = new edge_t[3];
   for (int i = 0; i < 3; i++)
   {
-    if (edges[i].vertex_top.y == top_y)
-      if (edges[i].vertex_bottom.y == bottom_y)
-        new_edges[0] = edges[i];
-      else
-        new_edges[1] = edges[i];
+    if (edges[i].vertex_delta.y == tallest_y)
+    {
+      if (edges[i].vertex_delta.x < new_edges[0].vertex_delta.x)
+        new_edges[1] = new_edges[0];
+      new_edges[0] = edges[i];
+    }
     else
-      new_edges[2] = edges[i];
+    {
+      if (edges[i].vertex_top.y == top_y)
+        new_edges[1] = edges[i];
+      else
+        new_edges[2] = edges[i];
+    }
   }
 
   return new_edges;
@@ -486,31 +537,32 @@ interpolating_attr_t Close2GL_Scene::Interpolate(interpolating_attr_t attr_0, in
 
 void Close2GL_Scene::RasterScanline(scene_state_t state, scanline_t line)
 {
-  int max_inc = std::round(line.vertex_delta.x);
+  int max_inc = std::floor(line.vertex_delta.x);
+  if (state.debug)
+  {
+    // PrintVec4(line.vertex_delta);
+    // std::cout << max_inc << std::endl;
+  }
   int x, y;
+  float z;
+  y = std::floor((line.vertex_top.y + line.vertex_bottom.y) / 2.0f);
   for (int inc_x = 0; inc_x < max_inc; inc_x++)
   {
-    glm::vec4 p = line.vertex_top;
-    p.x = std::floor(p.x + inc_x);
-    p.z = p.z + inc_x * line.inc_z;
-    y = std::floor(p.y);
-    x = std::floor(p.x);
+    z = line.vertex_top.z + inc_x * line.inc_z;
+    x = std::floor(line.vertex_top.x + inc_x);
 
-    if (x <= line.vertex_bottom.x && x >= line.vertex_top.x)
-    {
-      interpolating_attr_t attr = this->Interpolate(line.bottom, line.top, 0, max_inc, inc_x);
+    interpolating_attr_t attr = this->Interpolate(line.bottom, line.top, 0, max_inc, inc_x);
 
-      this->ChangeBuffer(state, x, y, p.z, vec4_to_rgba(attr.color_rgba / attr.ww));
-    }
+    this->ChangeBuffer(state, x, y, z, vec4_to_rgba(attr.color_rgba / attr.ww));
   }
 }
 
 void Close2GL_Scene::ChangeBuffer(scene_state_t state, int x, int y, float z, rgba_t color)
 {
-  int index = y*state.screen_width+x;
-  if (state.debug && std::isnan(z))
-    std::cout << x << " " << y << " " <<  z << " " << this->depth_buffer[index] << std::endl;
-  if (index >= 0 && index < this->buffer_size && z < this->depth_buffer[index])
+  if (x < 0 || y < 0 || x >= state.screen_width || y >= state.screen_height)
+    return;
+  int index = y*state.screen_width+x % this->buffer_size;
+  if (z < this->depth_buffer[index])
   {
     this->depth_buffer[index] = z;
     this->color_buffer[index] = color;
