@@ -355,14 +355,6 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 projection_matrix,
         t.vp_vertices[e],      vertex_attrs[e],
         t.vp_vertices[next_e], vertex_attrs[next_e]
       );
-      if (state.debug)
-      {
-        std::cout << e << std::endl;
-        // PrintVec4(t.vp_vertices[e]);
-        // PrintVec4(t.vp_vertices[next_e]);
-        PrintEdge(edges[e]);
-        // PrintVec4(edges[e].vertex_delta);
-      }
     }
 
     edges = this->OrderEdges(edges);
@@ -371,7 +363,7 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 projection_matrix,
         PrintEdge(edges[e]);
     
     int active_edge = 1;
-    int max_inc = std::floor(edges[0].vertex_delta.y);
+    int max_inc = std::ceil(edges[0].vertex_delta.y);
 
     int y, x;
     glm::vec4 p_a, p_b;
@@ -391,34 +383,45 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 projection_matrix,
 
       this->ChangeBuffer(state, x, y, p_a.z, vec4_to_rgba(attr_a.color_rgba / attr_a.ww));
       
-      p_b = edges[active_edge].vertex_top;
       if (active_edge == 2)
         inc -= edges[1].vertex_delta.y;
+
+      float min_x, max_x;
+      if (edges[active_edge].vertex_top.x >= edges[active_edge].vertex_bottom.x)
+      {
+        max_x = edges[active_edge].vertex_top.x;
+        min_x = edges[active_edge].vertex_bottom.x;
+      }
+      else
+      {
+        max_x = edges[active_edge].vertex_bottom.x;
+        min_x = edges[active_edge].vertex_top.x;
+      }
+
+      p_b = edges[active_edge].vertex_top;
       p_b.y = p_b.y + inc;
-      p_b.x = clamp(p_b.x + inc * edges[active_edge].inc_x,
-          std::min(edges[active_edge].vertex_top.x, edges[active_edge].vertex_bottom.x),
-          std::max(edges[active_edge].vertex_top.x, edges[active_edge].vertex_bottom.x));
+      p_b.x = clamp(p_b.x + inc * edges[active_edge].inc_x, min_x, max_x);
       p_b.z = p_b.z + inc * edges[active_edge].inc_z;
       y = std::floor(p_b.y);
       x = std::floor(p_b.x);
 
+      if (edges[active_edge].vertex_delta.y == 0.0f)
+      {
+        scanline_t sl = this->FindScanline(
+            edges[active_edge].vertex_top,    edges[active_edge].top, 
+            edges[active_edge].vertex_bottom, edges[active_edge].bottom);
+        this->RasterScanline(state, sl);
+      }
+
       attr_b = this->Interpolate(edges[active_edge].bottom, edges[active_edge].top, 0, edges[active_edge].vertex_delta.y, inc);
 
       this->ChangeBuffer(state, x, y, p_b.z, vec4_to_rgba(attr_b.color_rgba / attr_b.ww));
-        
+      
       if (state.polygon_mode == GL_FILL)
       {
-        // p_a.y -= 1;
         float my = (p_a.y + p_b.y) / 2.0f;
         p_a.y = my;
         p_b.y = my;
-        if (state.debug)
-        {
-          // PrintVec4(p_a);
-          // PrintEdge(edges[active_edge]); // quando fica horizontal tem alguma aresta que zera
-          // PrintVec4(edges[active_edge].vertex_bottom);
-          // PrintVec4(p_b);
-        }
         scanline_t sl = this->FindScanline(glm::make_vec4(p_a), attr_a, glm::make_vec4(p_b), attr_b);
         this->RasterScanline(state, sl);
       }
@@ -492,32 +495,45 @@ scanline_t Close2GL_Scene::FindScanline(glm::vec4 v0, interpolating_attr_t v0_at
   return sl;
 }
 
-edge_t* Close2GL_Scene::OrderEdges(edge_t* edges)
+edge_t* Close2GL_Scene::OrderEdges(bool debug, edge_t* edges)
 {
-  float top_y = std::numeric_limits<float>::max(), tallest_y = 0.0f;
+  float bottom_y = 0.0f, 
+    top_y = std::numeric_limits<float>::max(), 
+    tallest_y = 0.0f;
+  bool has_horizontal_edge = false;
   for (int i = 0; i < 3; i++)
   {
     tallest_y = std::max(tallest_y, std::abs(edges[i].vertex_delta.y));
+    bottom_y  = std::max(bottom_y, edges[i].vertex_bottom.y);
     top_y     = std::min(top_y,    edges[i].vertex_top.y);
-    has_horizontal_edge = (edges[i].vertex_delta.y == 0.0f);
+    has_horizontal_edge = has_horizontal_edge || (edges[i].vertex_delta.y == 0.0f);
   }
 
   edge_t* new_edges = new edge_t[3];
   for (int i = 0; i < 3; i++)
   {
-    if (edges[i].vertex_delta.y == tallest_y)
-    {
-      if (edges[i].vertex_delta.x < new_edges[0].vertex_delta.x)
-        new_edges[1] = new_edges[0];
-      new_edges[0] = edges[i];
-    }
-    else
-    {
-      if (edges[i].vertex_top.y == top_y)
-        new_edges[1] = edges[i];
+    if (has_horizontal_edge)
+      if (edges[i].vertex_delta.y == 0.0f)
+        if (edges[i].vertex_top.y == top_y)
+          new_edges[1] = edges[i];
+        else
+          new_edges[2] = edges[i];
       else
-        new_edges[2] = edges[i];
-    }
+        if (new_edges[0].vertex_top.w == 0.0f)
+          new_edges[0] = edges[i];
+        else
+          if (new_edges[1].vertex_top.w == 0.0f)
+            new_edges[1] = edges[i];
+          else
+            new_edges[2] = edges[i];
+    else
+      if (edges[i].vertex_top.y == top_y)
+        if (edges[i].vertex_bottom.y == bottom_y)
+          new_edges[0] = edges[i];
+        else
+          new_edges[1] = edges[i];
+      else
+        new_edges[2] = edges[i];    
   }
 
   return new_edges;
@@ -537,12 +553,7 @@ interpolating_attr_t Close2GL_Scene::Interpolate(interpolating_attr_t attr_0, in
 
 void Close2GL_Scene::RasterScanline(scene_state_t state, scanline_t line)
 {
-  int max_inc = std::floor(line.vertex_delta.x);
-  if (state.debug)
-  {
-    // PrintVec4(line.vertex_delta);
-    // std::cout << max_inc << std::endl;
-  }
+  int max_inc = std::ceil(line.vertex_delta.x);
   int x, y;
   float z;
   y = std::floor((line.vertex_top.y + line.vertex_bottom.y) / 2.0f);
