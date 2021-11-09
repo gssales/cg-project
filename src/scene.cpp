@@ -180,22 +180,10 @@ void Close2GL_Scene::LoadTrianglesToScene()
 void Close2GL_Scene::Enable(scene_state_t state)
 {
   glDisable(GL_DEPTH_TEST);
-  glPolygonMode(GL_FRONT_AND_BACK, state.polygon_mode);
+  glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
   glDisable(GL_CULL_FACE);
 
   this->ResizeBuffers(state);
-  
-  // int half_h = std::floor(state.screen_height/2.0f);
-  // int half_w = std::floor(state.screen_width/2.0f);
-
-  // for (int i = state.screen_height -1; i >= 0; i--)
-  //   for (int j = state.screen_width -1; j >= 0; j--)
-  //     // if (i <= 100 && j <= 100)
-  //       color_buffer[i*state.screen_height+j] = { 1.0f, 0.0f, 0.0f, 1.0f };
-        
-  // glBindTexture(GL_TEXTURE_2D, this->texture_id);
-  // glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, state.screen_width, state.screen_height, GL_RGBA, GL_FLOAT, color_buffer);
-
 }
 
 void Close2GL_Scene::Render(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix)
@@ -257,22 +245,26 @@ void Close2GL_Scene::TransformModel(scene_state_t state, glm::mat4 view_matrix, 
   triangles.clear();
 
   glm::mat4 to_ccs = view_matrix * model_matrix;
-  glm::mat4 mvp = projection_matrix * to_ccs;
+  glm::mat4 mvp = projection_matrix * view_matrix * this->model_matrix;
 
   std::vector<float> *vertices = &this->model.vertices;
   std::vector<float> *normals = &this->model.normals;
   for (int i = 0; i < vertices->size(); i += 12)
   {
     // OBJECT SPACE
+    glm::vec4 v0 = glm::vec4(  (*vertices)[i], (*vertices)[i+1], (*vertices)[i+2], (*vertices)[i+3]);
+    glm::vec4 v1 = glm::vec4((*vertices)[i+4], (*vertices)[i+5], (*vertices)[i+6], (*vertices)[i+7]);
+    glm::vec4 v2 = glm::vec4((*vertices)[i+8], (*vertices)[i+9], (*vertices)[i+10], (*vertices)[i+11]);
+
     triangle_t t;
-    t.ccs_vertices[0] = to_ccs * glm::vec4(  (*vertices)[i], (*vertices)[i+1], (*vertices)[i+2], (*vertices)[i+3]);
-    t.ccs_vertices[1] = to_ccs * glm::vec4((*vertices)[i+4], (*vertices)[i+5], (*vertices)[i+6], (*vertices)[i+7]);
-    t.ccs_vertices[2] = to_ccs * glm::vec4((*vertices)[i+8], (*vertices)[i+9], (*vertices)[i+10], (*vertices)[i+11]);
+    t.ccs_vertices[0] = to_ccs * v0;
+    t.ccs_vertices[1] = to_ccs * v1;
+    t.ccs_vertices[2] = to_ccs * v2;
     // CAMERA/EYE SPACE
 
-    t.vertices[0] = projection_matrix * t.ccs_vertices[0];
-    t.vertices[1] = projection_matrix * t.ccs_vertices[1];
-    t.vertices[2] = projection_matrix * t.ccs_vertices[2];
+    t.vertices[0] = mvp * v0;
+    t.vertices[1] = mvp * v1;
+    t.vertices[2] = mvp * v2;
     // HOMOGENUOUS CLIPPING SPACE
 
     if (t.vertices[0].w <= 0 || t.vertices[1].w <= 0 || t.vertices[2].w <= 0)
@@ -563,7 +555,7 @@ void Close2GL_Scene::ChangeBuffer(scene_state_t state, int x, int y, float z, rg
 {
   if (x < 0 || y < 0 || x >= state.screen_width || y >= state.screen_height)
     return;
-  int index = y*state.screen_width+x % this->buffer_size;
+  int index = (state.screen_height - y -1)*state.screen_width+x % this->buffer_size;
   if (z < this->depth_buffer[index])
   {
     this->depth_buffer[index] = z;

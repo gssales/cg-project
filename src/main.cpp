@@ -211,8 +211,9 @@ int main( int argc, char* argv[] )
 
     g_Camera.screen_ratio = State.screen_ratio;
     
-    // glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    // glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (State.use_api == USE_OPENGL)
+      g_OpenGLScene.New_Frame();
+    else
     g_Close2GLScene.New_Frame();
     
     // glPolygonMode(GL_FRONT_AND_BACK, State.polygon_mode);
@@ -239,7 +240,9 @@ int main( int argc, char* argv[] )
       glm::mat4 view = g_Camera.Camera_View();
       glm::mat4 proj = g_Camera.Camera_Projection();
 
-        // g_OpenGLScene.Render(g_SceneState, view, proj);
+      if (State.use_api == USE_OPENGL)
+        g_OpenGLScene.Render(g_SceneState, view, proj);
+      else
         g_Close2GLScene.Render(g_SceneState, view, proj);
 
     }
@@ -436,12 +439,13 @@ void GenerateGUI(double dt)
 
   ImGui::Text("Render Mode");
 
-  // if (ImGui::RadioButton("OpenGL", &State.use_api, USE_OPENGL))
-  //   UseOpenGL(&g_OpenGLScene, g_Model); 
-  // ImGui::SameLine();
-  // ImGui::RadioButton("Close2GL", &State.use_api, USE_CLOSE2GL);
+  if (ImGui::RadioButton("OpenGL", &State.use_api, USE_OPENGL))
+    g_OpenGLScene.Enable(g_SceneState); 
+  ImGui::SameLine();
+  if (ImGui::RadioButton("Close2GL", &State.use_api, USE_CLOSE2GL))
+    g_Close2GLScene.Enable(g_SceneState);
 
-  g_SceneState.debug = ImGui::Button("debug");
+  // g_SceneState.debug = ImGui::Button("debug");
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::RadioButton("Points", &g_SceneState.polygon_mode, GL_POINT);
@@ -525,7 +529,7 @@ void OpenObjectFile()
     g_Model = ReadModelFile(State.model_filename);
     g_Close2GLScene.SetModel(g_Model);
     g_OpenGLScene.LoadModelToScene(g_Model);
-    // AddModelToScene(&g_OpenGLScene, g_Model);
+    
     glm::vec3 bbox_center = (g_OpenGLScene.bounding_box_max + g_OpenGLScene.bounding_box_min) / 2.0f;
     g_OpenGLScene.model_matrix *= glm::translate(-bbox_center);
     g_OpenGLScene.bounding_box_max -= bbox_center;
