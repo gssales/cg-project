@@ -358,9 +358,6 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 projection_matrix,
     }
 
     edges = this->OrderEdges(edges);
-    for (int e = 0; e < 3; e++)
-      if (state.debug)
-        PrintEdge(edges[e]);
     
     int active_edge = 1;
     int max_inc = std::ceil(edges[0].vertex_delta.y);
@@ -482,20 +479,14 @@ scanline_t Close2GL_Scene::FindScanline(glm::vec4 v0, interpolating_attr_t v0_at
 
   glm::vec4 d = sl.vertex_bottom - sl.vertex_top;
   sl.inc_x = 1;
-  if (std::abs(d.y) >= 1.0)
-  {
-    sl.inc_z = d.z / d.y;
-  }
-  else
-  {
-    sl.inc_z = d.z;
-  }
+  sl.inc_z = d.z / d.x;
+
   sl.vertex_delta = d;
   
   return sl;
 }
 
-edge_t* Close2GL_Scene::OrderEdges(bool debug, edge_t* edges)
+edge_t* Close2GL_Scene::OrderEdges(edge_t* edges)
 {
   float bottom_y = 0.0f, 
     top_y = std::numeric_limits<float>::max(), 
