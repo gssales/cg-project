@@ -124,48 +124,15 @@ int main( int argc, char* argv[] )
   }
   g_Close2GLScene.LoadTrianglesToScene();
   
-  
-  // float vertex_data[] = {
-  //   -1.0f, -1.0f, 
-  //    1.0f, -1.0f, 
-  //    1.0f,  1.0f, 
-  //    1.0f,  1.0f, 
-  //   -1.0f,  1.0f, 
-  //   -1.0f, -1.0f };
-  // float texture_coords[] = {
-  //   0.0f, 0.0f,
-  //   1.0f, 0.0f,
-  //   1.0f, 1.0f,
-  //   1.0f, 1.0f,
-  //   0.0f, 1.0f,
-  //   0.0f, 0.0f };
-  // AddTriangles(&g_Close2GLScene, vertex_data, 12, texture_coords, 12);
-
-  // for (int i = 0; i < 256; i++)
-  //   for (int j = 0; j < 256; j++)
-  //     if (i <= 128 && j <= 128)
-  //       color_buffer[j+i*256] = { 1.0f, 0.0f, 0.0f, 1.0f };
-  //     else if (i <= 128 && j > 128)
-  //       color_buffer[j+i*256] = { 0.0f, 1.0f, 0.0f, 1.0f };
-  //     else if (i > 128 && j <= 128)
-  //       color_buffer[j+i*256] = { 0.0f, 0.0f, 1.0f, 1.0f };
-  //     else if (i > 128 && j > 128)
-  //       color_buffer[j+i*256] = { 0.5f, 0.5f, 0.5f, 1.0f };
-
-  // GLuint texture_id;
-  // glGenTextures(1, &texture_id);
-  // glActiveTexture(GL_TEXTURE0);
-  // glBindTexture(GL_TEXTURE_2D, texture_id);
-  // glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-  // glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 256, 256, 0, GL_RGBA, GL_FLOAT, color_buffer);
-
   g_Camera.camera_view = LOOK_FREE;
 
-  // g_OpenGLScene.Enable(g_SceneState);
+  if (State.use_api == USE_OPENGL)
+    g_OpenGLScene.Enable(g_SceneState);
+  else
   g_Close2GLScene.Enable(g_SceneState);
 
-  glLineWidth(1.5f);
-  glPointSize(3.0f);
+  // glLineWidth(1.5f);
+  // glPointSize(3.0f);
 
   double curr_time, dt;
   double update_fps = 0.0;
@@ -216,19 +183,17 @@ int main( int argc, char* argv[] )
     else
     g_Close2GLScene.New_Frame();
     
-    // glPolygonMode(GL_FRONT_AND_BACK, State.polygon_mode);
+    if (State.use_api == USE_OPENGL)
+    {
+      glPolygonMode(GL_FRONT_AND_BACK, g_SceneState.polygon_mode);
 
-    // if (State.use_api == USE_CLOSE2GL)
-    //   glDisable(GL_CULL_FACE);
-    // else 
-    // {
-    //   if (State.backface_culling )
-    //     glEnable(GL_CULL_FACE);
-    //   else
-    //     glDisable(GL_CULL_FACE);
+      if (g_SceneState.face_culling )
+        glEnable(GL_CULL_FACE);
+      else
+        glDisable(GL_CULL_FACE);
         
-    //   glFrontFace(State.front_face_mode);
-    // }
+      glFrontFace(g_SceneState.front_face);
+    }
     
     // Start the Dear ImGui frame
     ImGui_ImplOpenGL3_NewFrame();
@@ -534,6 +499,9 @@ void OpenObjectFile()
     g_OpenGLScene.model_matrix *= glm::translate(-bbox_center);
     g_OpenGLScene.bounding_box_max -= bbox_center;
     g_OpenGLScene.bounding_box_min -= bbox_center;
+    g_Close2GLScene.model_matrix *= glm::translate(-bbox_center);
+    g_Close2GLScene.bounding_box_max -= bbox_center;
+    g_Close2GLScene.bounding_box_min -= bbox_center;
 
     g_SceneState.gui_object_color[0] = g_Model.materials[0].diffuse[0];
     g_SceneState.gui_object_color[1] = g_Model.materials[0].diffuse[1];

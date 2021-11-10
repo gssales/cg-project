@@ -352,7 +352,7 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 projection_matrix,
     edges = this->OrderEdges(edges);
     
     int active_edge = 1;
-    int max_inc = std::ceil(edges[0].vertex_delta.y);
+    int max_inc = std::round(edges[0].vertex_delta.y);
 
     int y, x;
     glm::vec4 p_a, p_b;
@@ -365,8 +365,8 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 projection_matrix,
       p_a.y = p_a.y + inc;
       p_a.x = p_a.x + inc * edges[0].inc_x;
       p_a.z = p_a.z + inc * edges[0].inc_z;
-      y = std::floor(p_a.y);
-      x = std::floor(p_a.x);
+      y = std::round(p_a.y);
+      x = std::round(p_a.x);
 
       attr_a = this->Interpolate(edges[0].bottom, edges[0].top, 0, max_inc, inc);
 
@@ -391,10 +391,10 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 projection_matrix,
       p_b.y = p_b.y + inc;
       p_b.x = clamp(p_b.x + inc * edges[active_edge].inc_x, min_x, max_x);
       p_b.z = p_b.z + inc * edges[active_edge].inc_z;
-      y = std::floor(p_b.y);
-      x = std::floor(p_b.x);
+      y = std::round(p_b.y);
+      x = std::round(p_b.x);
 
-      if (edges[active_edge].vertex_delta.y == 0.0f)
+      if (std::abs(edges[active_edge].vertex_delta.y) < 0.5f)
       {
         scanline_t sl = this->FindScanline(
             edges[active_edge].vertex_top,    edges[active_edge].top, 
@@ -536,14 +536,14 @@ interpolating_attr_t Close2GL_Scene::Interpolate(interpolating_attr_t attr_0, in
 
 void Close2GL_Scene::RasterScanline(scene_state_t state, scanline_t line)
 {
-  int max_inc = std::ceil(line.vertex_delta.x);
+  int max_inc = std::round(line.vertex_delta.x);
   int x, y;
   float z;
-  y = std::floor((line.vertex_top.y + line.vertex_bottom.y) / 2.0f);
+  y = std::round((line.vertex_top.y + line.vertex_bottom.y) / 2.0f);
   for (int inc_x = 0; inc_x < max_inc; inc_x++)
   {
     z = line.vertex_top.z + inc_x * line.inc_z;
-    x = std::floor(line.vertex_top.x + inc_x);
+    x = std::round(line.vertex_top.x + inc_x);
 
     interpolating_attr_t attr = this->Interpolate(line.bottom, line.top, 0, max_inc, inc_x);
 
