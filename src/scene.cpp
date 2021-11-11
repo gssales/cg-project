@@ -59,19 +59,6 @@ void OpenGL_Scene::LoadModelToScene(model_t model)
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   this->vbo_normal_id = VBO_normal_coefficients_id;
 
-  location = 2;
-  GLuint VBO_projected_coefficients_id;
-  int data_size = 4;
-  float data[4] = {0.0f, 0.0f, 0.0f, 1.0f};
-  glCreateBuffers(1, &VBO_projected_coefficients_id);
-  glBindBuffer(GL_ARRAY_BUFFER, VBO_projected_coefficients_id);
-  glBufferData(GL_ARRAY_BUFFER, data_size * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
-  glBufferSubData(GL_ARRAY_BUFFER, 0, data_size * sizeof(GL_FLOAT), data);
-  glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
-  glEnableVertexAttribArray(location);
-  glBindBuffer(GL_ARRAY_BUFFER, 0);
-  this->vbo_projected_id = VBO_projected_coefficients_id;
-
   glBindVertexArray(0);
 }
 
