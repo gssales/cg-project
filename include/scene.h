@@ -40,17 +40,19 @@ const rgba_t black = { 0.0, 0.0, 0.0, 1.0 };
 
 typedef struct
 {
-  glm::vec4 vertices[3];
-  glm::vec4 normals[3];
-  glm::vec4 vp_vertices[3];
-  glm::vec4 ccs_vertices[3];
+  glm::vec4 vertices[3];      // NDC
+  glm::vec4 normals[3];       // Object space
+  glm::vec4 vp_vertices[3];   // Viewport
+  glm::vec4 ccs_vertices[3];  // Eye space
+  glm::vec4 world_vertices[3];// World space
   glm::vec4 face_normal;
 } triangle_t;
 
 typedef struct
 {
-  glm::vec4 vertex_p;
-  glm::vec4 vertex_ccs;
+  glm::vec4 world_position;
+  glm::vec4 clgl_position;
+  glm::vec4 ccs_position;
   glm::vec4 normal;
   glm::vec4 color_rgba;
   float ww = 1.0;
@@ -123,12 +125,12 @@ public:
   void SetModel(model_t model);
   void ResizeBuffers(scene_state_t state);
   void TransformModel(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix, glm::mat4 viewport_matrix);
-  void Rasterize(scene_state_t state, glm::mat4 projection_matrix, glm::mat4 viewport_matrix);
+  void Rasterize(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix, glm::mat4 viewport_matrix);
   edge_t FindEdge(glm::vec4 v0, interpolating_attr_t v0_attr, glm::vec4 v1, interpolating_attr_t v1_attr);
   scanline_t FindScanline(glm::vec4 v0, interpolating_attr_t v0_attr, glm::vec4 v1, interpolating_attr_t v1_attr);
   edge_t* OrderEdges(edge_t* edges);
   interpolating_attr_t Interpolate(interpolating_attr_t attr_0, interpolating_attr_t attr_1, float min, float max, float value);
-  void RasterScanline(scene_state_t state, scanline_t line);
+  void RasterScanline(scene_state_t state, scanline_t line, glm::mat4 view_matrix);
   void ChangeBuffer(scene_state_t state, int x, int y, float z, rgba_t color);
 };
 

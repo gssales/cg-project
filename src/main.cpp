@@ -410,7 +410,7 @@ void GenerateGUI(double dt)
   if (ImGui::RadioButton("Close2GL", &State.use_api, USE_CLOSE2GL))
     g_Close2GLScene.Enable(g_SceneState);
 
-  // g_SceneState.debug = ImGui::Button("debug");
+  ImGui::Checkbox("Debug Colors", &g_SceneState.debug);
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::RadioButton("Points", &g_SceneState.polygon_mode, GL_POINT);
