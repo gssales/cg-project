@@ -22,7 +22,10 @@ typedef struct
   bool  face_culling = true;
   int   front_face   = GL_CCW;
   int   shading_mode = PHONG_SHADING;
-  bool  lights_on    = true;
+  int   lighting_mode = AMBIENT_LIGHT + DIFFUSE_LIGHT + SPECULAR_LIGHT;
+  bool  use_calculated_normals = true;
+  bool  use_raw_normals = false;
+
   float gui_object_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
   bool debug = false;
@@ -94,9 +97,9 @@ public:
   OpenGL_GpuProgram shader;
   GLuint vbo_model_id;
   GLuint vbo_normal_id;
-  GLuint vbo_projected_id;
+  GLuint vbo_surface_normal_id;
 
-  void LoadModelToScene(model_t model);
+  void LoadModelToScene(scene_state_t state, model_t model);
   void Enable(scene_state_t state);
   void Render(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix);
   void New_Frame();

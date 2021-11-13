@@ -32,6 +32,25 @@ glm::vec3 matrices::normalized(glm::vec3 v)
     return glm::vec3(0.0f);
 }
 
+glm::vec3 matrices::cw_surface_normal(glm::vec3 u, glm::vec3 v)
+{
+  glm::vec3 n;
+  n.x = u.y*v.z - u.z*v.y;
+  n.y = u.z*v.x - u.x*v.z;
+  n.z = u.x*v.y - u.y*v.x;
+  return n;
+}
+
+glm::vec4 matrices::cw_surface_normal(glm::vec4 u, glm::vec4 v)
+{
+  glm::vec4 n;
+  n.x = u.y*v.z - u.z*v.y;
+  n.y = u.z*v.x - u.x*v.z;
+  n.z = u.x*v.y - u.y*v.x;
+  n.w = 0.0;
+  return n;
+}
+
 glm::mat4 matrices::mat4(
     float m00, float m01, float m02, float m03, // LINHA 1
     float m10, float m11, float m12, float m13, // LINHA 2

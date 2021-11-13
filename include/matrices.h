@@ -15,6 +15,9 @@ namespace matrices
   glm::vec3 cross(glm::vec3 u, glm::vec3 v);
   glm::vec3 normalized(glm::vec3 v);
 
+  glm::vec3 cw_surface_normal(glm::vec3 u, glm::vec3 v);
+  glm::vec4 cw_surface_normal(glm::vec4 u, glm::vec4 v);
+
   glm::mat4 mat4(
     float m00, float m01, float m02, float m03, // LINHA 1
     float m10, float m11, float m12, float m13, // LINHA 2

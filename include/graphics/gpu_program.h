@@ -8,9 +8,14 @@
 #include "loaders.h"
 
 #define NO_SHADING 0
-#define GOURAUD_AD_SHADING 1
-#define GOURAUD_ADS_SHADING 2
+#define FLAT_SHADING 1
+#define GOURAUD_SHADING 2
 #define PHONG_SHADING 3
+#define FLAT_PHONG_SHADING 4 // Calculates phong lighting on surface normals
+
+#define AMBIENT_LIGHT 1
+#define DIFFUSE_LIGHT 2
+#define SPECULAR_LIGHT 4
 
 typedef struct {
     unsigned int type;

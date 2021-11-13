@@ -38,10 +38,10 @@ void SuperScene::DrawScene()
 
 /* ==================== OpenGL ====================== */
 
-void OpenGL_Scene::LoadModelToScene(model_t model)
+void OpenGL_Scene::LoadModelToScene(scene_state_t state, model_t model)
 {
   if (!this->vao_id) {
-    GLuint bufs[3] = { this->vbo_model_id, this->vbo_normal_id, this->vbo_projected_id };
+    GLuint bufs[3] = { this->vbo_model_id, this->vbo_normal_id, this->vbo_surface_normal_id };
     glDeleteBuffers(3, bufs);
     glDeleteVertexArrays(1, &this->vao_id);
   }
@@ -50,11 +50,25 @@ void OpenGL_Scene::LoadModelToScene(model_t model)
   glGenVertexArrays(1, &vertex_array_object_id);
   glBindVertexArray(vertex_array_object_id);
 
-  this->model_matrix      = glm::mat4(1.0f);
+  std::vector<float> vertices = ExtractVertices(model);
+  std::vector<float> normals, surface_normals;
+  if (state.use_raw_normals) {
+    normals = model.raw_normals;
+    surface_normals = ExtractSurfaceNormals(model);
+  } else
+  if (state.use_calculated_normals) {
+    normals = ExtractCalculatedNormals(model);
+    surface_normals = ExtractCalculatedSurfaceNormals(model);
+  } else {
+    normals = ExtractNormals(model);
+    surface_normals = ExtractSurfaceNormals(model);
+  }
+
+  this->model_matrix     = glm::mat4(1.0f);
   this->bounding_box_max = model.bounding_box_max;
   this->bounding_box_min = model.bounding_box_min;
   this->name             = model.model_name;
-  this->vertex_count     = model.vertices.size() / 4;
+  this->vertex_count     = vertices.size() / 4;
   this->rendering_mode   = GL_TRIANGLES;
   this->vao_id           = vertex_array_object_id;
   
@@ -63,8 +77,8 @@ void OpenGL_Scene::LoadModelToScene(model_t model)
   GLuint VBO_model_coefficients_id;
   glCreateBuffers(1, &VBO_model_coefficients_id);
   glBindBuffer(GL_ARRAY_BUFFER, VBO_model_coefficients_id);
-  glBufferData(GL_ARRAY_BUFFER, model.vertices.size() * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
-  glBufferSubData(GL_ARRAY_BUFFER, 0, model.vertices.size() * sizeof(GL_FLOAT), model.vertices.data());
+  glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, vertices.size() * sizeof(GL_FLOAT), vertices.data());
   glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
   glEnableVertexAttribArray(location);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -74,12 +88,23 @@ void OpenGL_Scene::LoadModelToScene(model_t model)
   GLuint VBO_normal_coefficients_id;
   glCreateBuffers(1, &VBO_normal_coefficients_id);
   glBindBuffer(GL_ARRAY_BUFFER, VBO_normal_coefficients_id);
-  glBufferData(GL_ARRAY_BUFFER, model.normals.size() * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
-  glBufferSubData(GL_ARRAY_BUFFER, 0, model.normals.size() * sizeof(GL_FLOAT), model.normals.data());
+  glBufferData(GL_ARRAY_BUFFER, normals.size() * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, normals.size() * sizeof(GL_FLOAT), normals.data());
   glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
   glEnableVertexAttribArray(location);
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   this->vbo_normal_id = VBO_normal_coefficients_id;
+
+  location = 2;
+  GLuint VBO_surface_normal_coefficients_id;
+  glCreateBuffers(1, &VBO_surface_normal_coefficients_id);
+  glBindBuffer(GL_ARRAY_BUFFER, VBO_surface_normal_coefficients_id);
+  glBufferData(GL_ARRAY_BUFFER, surface_normals.size() * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
+  glBufferSubData(GL_ARRAY_BUFFER, 0, surface_normals.size() * sizeof(GL_FLOAT), surface_normals.data());
+  glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
+  glEnableVertexAttribArray(location);
+  glBindBuffer(GL_ARRAY_BUFFER, 0);
+  this->vbo_surface_normal_id = VBO_surface_normal_coefficients_id;
 
   glBindVertexArray(0);
 }
@@ -120,7 +145,7 @@ void OpenGL_Scene::Render(scene_state_t state, glm::mat4 view_matrix, glm::mat4 
   );
   glUniform4fv(this->shader.color_uniform, 1 , state.gui_object_color);
   glUniform1i(this->shader.shading_uniform, state.shading_mode);
-  glUniform1i(this->shader.lighting_uniform, state.lights_on);
+  glUniform1i(this->shader.lighting_uniform, state.lighting_mode);
 
   this->DrawScene();
 }

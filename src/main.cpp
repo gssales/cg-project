@@ -17,7 +17,6 @@
 #include "graphics/camera.h"
 #include "input.h"
 #include "scene.h"
-#include "close2gl.h"
 
 Camera g_Camera;
 Input g_Input;
@@ -44,6 +43,7 @@ void UpdateCamera_SeparateControls(double dt);
 void GenerateGUI(double dt);
 
 void OpenObjectFile();
+void CenterModel();
 
 void ResetCamera();
 
@@ -79,7 +79,7 @@ struct State_t
 
   // int shading_mode = PHONG_SHADING;
   // bool lights_on = true;
-  int use_api = USE_CLOSE2GL;
+  int use_api = USE_OPENGL;
 
   // float gui_object_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 } State;
@@ -419,20 +419,59 @@ void GenerateGUI(double dt)
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::Text("Shading");
-  ImGui::RadioButton("Gouraud AD", &g_SceneState.shading_mode, GOURAUD_AD_SHADING); ImGui::SameLine();
-  ImGui::RadioButton("Gouraud ADS", &g_SceneState.shading_mode, GOURAUD_ADS_SHADING);
+  ImGui::RadioButton("Flat", &g_SceneState.shading_mode, FLAT_SHADING); ImGui::SameLine();
+  ImGui::RadioButton("Gouraud", &g_SceneState.shading_mode, GOURAUD_SHADING);
   ImGui::RadioButton("Phong", &g_SceneState.shading_mode, PHONG_SHADING); ImGui::SameLine();
   ImGui::RadioButton("None", &g_SceneState.shading_mode, NO_SHADING);
+  ImGui::TextWrapped("Special: Phong on Surface (use for phong lighting on the cube)");
+  ImGui::RadioButton("Flat Phong", &g_SceneState.shading_mode, FLAT_PHONG_SHADING);
   
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
-  ImGui::Checkbox("Lights On", &g_SceneState.lights_on);
+  ImGui::RadioButton("Lights Off", &g_SceneState.lighting_mode, AMBIENT_LIGHT);
+  ImGui::RadioButton("AD Light", &g_SceneState.lighting_mode, AMBIENT_LIGHT + DIFFUSE_LIGHT);
+  ImGui::RadioButton("ADS Light", &g_SceneState.lighting_mode, AMBIENT_LIGHT + DIFFUSE_LIGHT + SPECULAR_LIGHT);
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::Checkbox("Backface Culling", &g_SceneState.face_culling);
 
+  int last_face = g_SceneState.front_face;
   ImGui::Text("Orientation");
   ImGui::RadioButton("CW", &g_SceneState.front_face, GL_CW); ImGui::SameLine();
   ImGui::RadioButton("CCW", &g_SceneState.front_face, GL_CCW);
+  if (State.model_loaded && last_face != g_SceneState.front_face) {
+    std::cout << "normals recalculated" << std::endl << "Before: ";
+    PrintVec4(g_Model.triangles[0].calculated_face_normal);
+    PrintVec4(g_Model.calculated_normals[0]);
+    CalculateNormals(&g_Model, g_SceneState.front_face == GL_CCW);
+    std::cout << "After: ";
+    PrintVec4(g_Model.triangles[0].calculated_face_normal);
+    PrintVec4(g_Model.calculated_normals[0]);
+
+    g_Close2GLScene.SetModel(g_Model);
+    g_OpenGLScene.LoadModelToScene(g_SceneState, g_Model);
+    CenterModel();
+  }
+  
+  int last_n = g_SceneState.use_calculated_normals;
+  int last_raw = g_SceneState.use_raw_normals;
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
+  ImGui::Checkbox("Use Calculated Normals", &g_SceneState.use_calculated_normals);
+  if (State.model_loaded && last_n != g_SceneState.use_calculated_normals) {
+    g_OpenGLScene.LoadModelToScene(g_SceneState, g_Model);
+    CenterModel();
+    
+    if (g_SceneState.use_calculated_normals)
+      g_SceneState.use_raw_normals = false;
+  }
+
+  ImGui::Checkbox("Use All Normals from File", &g_SceneState.use_raw_normals);
+  if (State.model_loaded && last_raw != g_SceneState.use_raw_normals) {
+    g_OpenGLScene.LoadModelToScene(g_SceneState, g_Model);
+    CenterModel();
+    
+    if (g_SceneState.use_raw_normals)
+      g_SceneState.use_calculated_normals = false;
+  }
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::Separator();
@@ -488,20 +527,26 @@ void GenerateGUI(double dt)
   ImGui::End();
 }
 
+void CenterModel()
+{
+  glm::vec3 bbox_center = (g_Model.bounding_box_max + g_Model.bounding_box_min) / 2.0f;
+  g_OpenGLScene.model_matrix *= glm::translate(-bbox_center);
+  g_OpenGLScene.bounding_box_max -= bbox_center;
+  g_OpenGLScene.bounding_box_min -= bbox_center;
+  g_Close2GLScene.model_matrix *= glm::translate(-bbox_center);
+  g_Close2GLScene.bounding_box_max -= bbox_center;
+  g_Close2GLScene.bounding_box_min -= bbox_center;
+}
+
 void OpenObjectFile()
 {
   try {
     g_Model = ReadModelFile(State.model_filename);
+    CalculateNormals(&g_Model, g_SceneState.front_face == GL_CCW);
     g_Close2GLScene.SetModel(g_Model);
-    g_OpenGLScene.LoadModelToScene(g_Model);
+    g_OpenGLScene.LoadModelToScene(g_SceneState, g_Model);
     
-    glm::vec3 bbox_center = (g_OpenGLScene.bounding_box_max + g_OpenGLScene.bounding_box_min) / 2.0f;
-    g_OpenGLScene.model_matrix *= glm::translate(-bbox_center);
-    g_OpenGLScene.bounding_box_max -= bbox_center;
-    g_OpenGLScene.bounding_box_min -= bbox_center;
-    g_Close2GLScene.model_matrix *= glm::translate(-bbox_center);
-    g_Close2GLScene.bounding_box_max -= bbox_center;
-    g_Close2GLScene.bounding_box_min -= bbox_center;
+    CenterModel();
 
     g_SceneState.gui_object_color[0] = g_Model.materials[0].diffuse[0];
     g_SceneState.gui_object_color[1] = g_Model.materials[0].diffuse[1];
@@ -509,8 +554,8 @@ void OpenObjectFile()
     g_SceneState.gui_object_color[3] = 1.0f;
 
     float bbox_size = std::max(
-      (g_OpenGLScene.bounding_box_max.x - g_OpenGLScene.bounding_box_min.x) * 2.0f,
-      (g_OpenGLScene.bounding_box_max.y - g_OpenGLScene.bounding_box_min.y) * 2.0f
+      (g_Model.bounding_box_max.x - g_Model.bounding_box_min.x) * 2.0f,
+      (g_Model.bounding_box_max.y - g_Model.bounding_box_min.y) * 2.0f
     ) / 2.0f;
     float distance = bbox_size / std::tan(g_Camera.h_fov / 2.0f);
 
