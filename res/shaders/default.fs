@@ -33,16 +33,18 @@ vec4 phong_shading() {
 
   vec4 n = normalize(normal);
   vec4 l = normalize(light_position - world_position);
+  vec4 v = normalize(camera_position - world_position);
   vec4 lambert_diffuse_term = vec4(0.0);
   if (lighting)
     lambert_diffuse_term = color * max(0, dot(n, l));
 
   vec4 Ks = vec4(0.5, 0.5, 0.5, 1.0);
   float q = 240.0;
-  vec4 reflex = normalize(2 * n * dot(l,n) -l);
+  vec4 r = normalize(2 * n * dot(l,n) -l);
+  vec4 h = normalize(l + v);
   vec4 specular_term = vec4(0.0);
   if (lighting)
-    specular_term  = Ks * pow(max(0, dot(n, reflex)), q);
+    specular_term  = Ks * pow(max(0, dot(h, r)), q);
 
   return ambient_term + lambert_diffuse_term + specular_term;
 }
