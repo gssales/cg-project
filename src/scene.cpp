@@ -16,7 +16,7 @@ void SuperScene::DrawScene()
 
 void OpenGL_Scene::LoadModelToScene(scene_state_t state, model_t model)
 {
-  if (!this->vao_id) {
+  if (this->vao_id) {
     GLuint bufs[3] = { this->vbo_model_id, this->vbo_normal_id, this->vbo_surface_normal_id };
     glDeleteBuffers(3, bufs);
     glDeleteVertexArrays(1, &this->vao_id);
@@ -61,6 +61,7 @@ void OpenGL_Scene::LoadModelToScene(scene_state_t state, model_t model)
   this->vbo_model_id = VBO_model_coefficients_id;
 
   location = 1;
+  number_of_dimensions = 4;
   GLuint VBO_normal_coefficients_id;
   glCreateBuffers(1, &VBO_normal_coefficients_id);
   glBindBuffer(GL_ARRAY_BUFFER, VBO_normal_coefficients_id);
@@ -72,6 +73,7 @@ void OpenGL_Scene::LoadModelToScene(scene_state_t state, model_t model)
   this->vbo_normal_id = VBO_normal_coefficients_id;
 
   location = 2;
+  number_of_dimensions = 4;
   GLuint VBO_surface_normal_coefficients_id;
   glCreateBuffers(1, &VBO_surface_normal_coefficients_id);
   glBindBuffer(GL_ARRAY_BUFFER, VBO_surface_normal_coefficients_id);
@@ -82,7 +84,39 @@ void OpenGL_Scene::LoadModelToScene(scene_state_t state, model_t model)
   glBindBuffer(GL_ARRAY_BUFFER, 0);
   this->vbo_surface_normal_id = VBO_surface_normal_coefficients_id;
 
+  if (model.has_texture) {
+    std::vector<float> texcoords = ExtractTextureCoords(model);
+    location = 3;
+    number_of_dimensions = 2;
+    GLuint VBO_texture_coords_coefficients_id;
+    glCreateBuffers(1, &VBO_texture_coords_coefficients_id);
+    glBindBuffer(GL_ARRAY_BUFFER, VBO_texture_coords_coefficients_id);
+    glBufferData(GL_ARRAY_BUFFER, texcoords.size() * sizeof(GL_FLOAT), NULL, GL_DYNAMIC_DRAW);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, texcoords.size() * sizeof(GL_FLOAT), texcoords.data());
+    glVertexAttribPointer(location, number_of_dimensions, GL_FLOAT, GL_FALSE, 0, 0);
+    glEnableVertexAttribArray(location);
+    glBindBuffer(GL_ARRAY_BUFFER, 0);
+    this->vbo_texture_coords_id = VBO_texture_coords_coefficients_id;
+  }
+
   glBindVertexArray(0);
+}
+
+void OpenGL_Scene::LoadTextureToScene(scene_state_t state, texture_t tex)
+{
+  if (!this->texture_id)
+    glDeleteBuffers(1, &this->texture_id);
+
+  GLuint tex_id;
+  glActiveTexture(GL_TEXTURE1);
+  glGenTextures(1, &tex_id);
+  glBindTexture(GL_TEXTURE_2D, tex_id);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, state.texture_filter);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, state.texture_filter);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tex.width, tex.height, 0, GL_RGBA,
+                GL_UNSIGNED_BYTE, tex.data);
+  glGenerateMipmap(GL_TEXTURE_2D);
+  this->texture_id = tex_id;
 }
 
 void OpenGL_Scene::Enable(scene_state_t state)
@@ -122,6 +156,8 @@ void OpenGL_Scene::Render(scene_state_t state, glm::mat4 view_matrix, glm::mat4 
   glUniform4fv(this->shader.color_uniform, 1 , state.gui_object_color);
   glUniform1i(this->shader.shading_uniform, state.shading_mode);
   glUniform1i(this->shader.lighting_uniform, state.lighting_mode);
+  glUniform1i(this->shader.texture_uniform, 1);
+  glUniform1i(this->shader.has_texture_uniform, state.enable_texture);
 
   this->DrawScene();
 }
@@ -208,6 +244,7 @@ void Close2GL_Scene::Render(scene_state_t state, glm::mat4 view_matrix, glm::mat
         
   glBindTexture(GL_TEXTURE_2D, this->texture_id);
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, state.screen_width, state.screen_height, 0, GL_RGBA, GL_FLOAT, this->color_buffer); 
 
   glUseProgram(this->shader.program_id);

@@ -11,6 +11,7 @@
 
 #include "matrices.h"
 #include "graphics/model.h"
+#include "graphics/texture.h"
 #include "graphics/gpu_program.h"
 
 typedef struct
@@ -26,6 +27,7 @@ typedef struct
   bool  use_calculated_normals = true;
   bool  use_raw_normals = false;
   bool  enable_texture = false;
+  int   texture_filter = GL_NEAREST;
 
   float gui_object_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
@@ -100,8 +102,11 @@ public:
   GLuint vbo_model_id;
   GLuint vbo_normal_id;
   GLuint vbo_surface_normal_id;
+  GLuint vbo_texture_coords_id;
+  GLuint texture_id = 0;
 
   void LoadModelToScene(scene_state_t state, model_t model);
+  void LoadTextureToScene(scene_state_t state, texture_t tex);
   void Enable(scene_state_t state);
   void Render(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix);
   void New_Frame();

@@ -13,7 +13,10 @@
 #include <glm/vec4.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include <stb/stb_image.h>
+
 #include "graphics/model.h"
+#include "graphics/texture.h"
 #include "graphics/camera.h"
 #include "input.h"
 #include "scene.h"
@@ -24,6 +27,7 @@ OpenGL_Scene g_OpenGLScene;
 Close2GL_Scene g_Close2GLScene;
 scene_state_t g_SceneState;
 model_t g_Model;
+texture_t g_Texture;
 
 void ErrorCallback(int error, const char* description);
 void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mode);
@@ -118,10 +122,13 @@ int main( int argc, char* argv[] )
   
   g_Camera.camera_view = LOOK_FREE;
 
+  g_Texture = ReadTextureFile("../res/images/checker_8x8.jpg");
+  g_OpenGLScene.LoadTextureToScene(g_SceneState, g_Texture);
+
   if (State.use_api == USE_OPENGL)
     g_OpenGLScene.Enable(g_SceneState);
   else
-  g_Close2GLScene.Enable(g_SceneState);
+    g_Close2GLScene.Enable(g_SceneState);
 
   // glLineWidth(1.5f);
   // glPointSize(3.0f);
@@ -185,6 +192,12 @@ int main( int argc, char* argv[] )
         glDisable(GL_CULL_FACE);
         
       glFrontFace(g_SceneState.front_face);
+
+      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, g_SceneState.texture_filter);
+      if (g_SceneState.texture_filter == GL_LINEAR_MIPMAP_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+      else
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, g_SceneState.texture_filter);
     }
     
     // Start the Dear ImGui frame
@@ -503,7 +516,12 @@ void GenerateGUI(double dt)
   ImGui::Separator();
   ImGui::Text("Model");
   ImGui::ColorEdit4("Object Color", g_SceneState.gui_object_color);
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::Checkbox("Use Texture", &g_SceneState.enable_texture);
+  ImGui::Dummy(ImVec2(0.0f, 5.0f));
+  ImGui::RadioButton("Nearest", &g_SceneState.texture_filter, GL_NEAREST);
+  ImGui::RadioButton("Bilinear", &g_SceneState.texture_filter, GL_LINEAR);
+  ImGui::RadioButton("Trilinear", &g_SceneState.texture_filter, GL_LINEAR_MIPMAP_LINEAR);
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::InputText("File Path", State.model_filename, IM_ARRAYSIZE(State.model_filename));

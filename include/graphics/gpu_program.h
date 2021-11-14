@@ -37,6 +37,8 @@ class OpenGL_GpuProgram : public GpuProgram {
     int color_uniform;
     int shading_uniform;
     int lighting_uniform;
+    int texture_uniform;
+    int has_texture_uniform;
 };
 
 class Close2GL_GpuProgram : public GpuProgram {

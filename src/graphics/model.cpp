@@ -207,3 +207,11 @@ std::vector<float> ExtractCalculatedSurfaceNormals(model_t model)
   }
   return normals;
 }
+std::vector<float> ExtractTextureCoords(model_t model)
+{
+  std::vector<float> texture_coords;
+  for (model_triangle_t t : model.triangles)
+    for (int n = 0; n < 6; n++)
+      texture_coords.push_back(t.tex_coords[n]);
+  return texture_coords;
+}

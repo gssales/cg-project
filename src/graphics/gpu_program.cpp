@@ -149,6 +149,10 @@ void CreateGpuProgram(OpenGL_GpuProgram* gpu_program)
     = glGetUniformLocation(gpu_program->program_id, "shading_mode");
   gpu_program->lighting_uniform
     = glGetUniformLocation(gpu_program->program_id, "lighting_mode");
+  gpu_program->texture_uniform
+    = glGetUniformLocation(gpu_program->program_id, "TextureImage1");
+  gpu_program->has_texture_uniform
+    = glGetUniformLocation(gpu_program->program_id, "has_texture");
 }
 
 void CreateGpuProgram(Close2GL_GpuProgram* gpu_program) 

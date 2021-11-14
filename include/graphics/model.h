@@ -53,5 +53,6 @@ std::vector<float> ExtractNormals(model_t model);
 std::vector<float> ExtractCalculatedNormals(model_t model);
 std::vector<float> ExtractSurfaceNormals(model_t model);
 std::vector<float> ExtractCalculatedSurfaceNormals(model_t model);
+std::vector<float> ExtractTextureCoords(model_t model);
 
 #endif // _MODEL_H
