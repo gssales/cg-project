@@ -47,6 +47,7 @@ void UpdateCamera_SeparateControls(double dt);
 void GenerateGUI(double dt);
 
 void OpenObjectFile();
+void OpenImageFile();
 void CenterModel();
 
 void ResetCamera();
@@ -64,6 +65,7 @@ struct State_t
   double lastCursorPosX, lastCursorPosY;
 
   bool model_loaded = false;
+  bool texture_loaded = false;
 
   glm::vec3 camera_initial_position = glm::vec3(0.0f, 0.0f, 0.0f);
   float camera_initial_farplane = 1000.0f;
@@ -76,6 +78,7 @@ struct State_t
   bool close = false;
 
   char model_filename[512] = "..\\res\\models\\cube.in";
+  char texture_filename[512] = "..\\res\\images\\checker_8x8.jpg";
 
   int use_api = USE_OPENGL;
 } State;
@@ -121,9 +124,6 @@ int main( int argc, char* argv[] )
   g_Close2GLScene.LoadTrianglesToScene();
   
   g_Camera.camera_view = LOOK_FREE;
-
-  g_Texture = ReadTextureFile("../res/images/checker_8x8.jpg");
-  g_OpenGLScene.LoadTextureToScene(g_SceneState, g_Texture);
 
   if (State.use_api == USE_OPENGL)
     g_OpenGLScene.Enable(g_SceneState);
@@ -518,6 +518,9 @@ void GenerateGUI(double dt)
   ImGui::ColorEdit4("Object Color", g_SceneState.gui_object_color);
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::Checkbox("Use Texture", &g_SceneState.enable_texture);
+  ImGui::InputText("Texture Path", State.texture_filename, IM_ARRAYSIZE(State.texture_filename));
+  if (ImGui::Button("Open texture"))
+    OpenImageFile();
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::RadioButton("Nearest", &g_SceneState.texture_filter, GL_NEAREST);
   ImGui::RadioButton("Bilinear", &g_SceneState.texture_filter, GL_LINEAR);
@@ -525,7 +528,7 @@ void GenerateGUI(double dt)
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::InputText("File Path", State.model_filename, IM_ARRAYSIZE(State.model_filename));
-  if (ImGui::Button("Open file"))
+  if (ImGui::Button("Open model"))
     OpenObjectFile();
 
   ImGui::Dummy(ImVec2(0.0f, 10.0f));
@@ -576,6 +579,18 @@ void OpenObjectFile()
     g_Camera.farplane = State.camera_initial_farplane;
 
     State.model_loaded = true;
+  } catch ( std::exception& e ) {
+    
+  }
+}
+
+void OpenImageFile()
+{
+  try {
+    g_Texture = ReadTextureFile(State.texture_filename);
+    g_OpenGLScene.LoadTextureToScene(g_SceneState, g_Texture);
+  
+    State.texture_loaded = true;
   } catch ( std::exception& e ) {
     
   }
