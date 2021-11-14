@@ -410,7 +410,7 @@ void GenerateGUI(double dt)
   if (ImGui::RadioButton("Close2GL", &State.use_api, USE_CLOSE2GL))
     g_Close2GLScene.Enable(g_SceneState);
 
-  ImGui::Checkbox("Debug Colors", &g_SceneState.debug);
+  ImGui::Checkbox("Debug Colors", &g_SceneState.debug_colors);
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::RadioButton("Points", &g_SceneState.polygon_mode, GL_POINT);
@@ -439,14 +439,7 @@ void GenerateGUI(double dt)
   ImGui::RadioButton("CW", &g_SceneState.front_face, GL_CW); ImGui::SameLine();
   ImGui::RadioButton("CCW", &g_SceneState.front_face, GL_CCW);
   if (State.model_loaded && last_face != g_SceneState.front_face) {
-    std::cout << "normals recalculated" << std::endl << "Before: ";
-    PrintVec4(g_Model.triangles[0].calculated_face_normal);
-    PrintVec4(g_Model.calculated_normals[0]);
     CalculateNormals(&g_Model, g_SceneState.front_face == GL_CCW);
-    std::cout << "After: ";
-    PrintVec4(g_Model.triangles[0].calculated_face_normal);
-    PrintVec4(g_Model.calculated_normals[0]);
-
     g_Close2GLScene.SetModel(g_Model);
     g_OpenGLScene.LoadModelToScene(g_SceneState, g_Model);
     CenterModel();
@@ -529,6 +522,9 @@ void GenerateGUI(double dt)
 
 void CenterModel()
 {
+  g_OpenGLScene.model_matrix   = glm::mat4(1.0f);
+  g_Close2GLScene.model_matrix = glm::mat4(1.0f);
+
   glm::vec3 bbox_center = (g_Model.bounding_box_max + g_Model.bounding_box_min) / 2.0f;
   g_OpenGLScene.model_matrix *= glm::translate(-bbox_center);
   g_OpenGLScene.bounding_box_max -= bbox_center;

@@ -28,7 +28,7 @@ typedef struct
 
   float gui_object_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
-  bool debug = false;
+  bool debug_colors = false;
 } scene_state_t;
 
 typedef struct
@@ -43,23 +43,23 @@ const rgba_t black = { 0.0, 0.0, 0.0, 1.0 };
 
 typedef struct
 {
-  glm::vec4 vertices[3];      // NDC
-  glm::vec4 normals[3];       // Object space
-  glm::vec4 vp_vertices[3];   // Viewport
-  glm::vec4 ccs_vertices[3];  // Eye space
-  glm::vec4 world_vertices[3];// World space
-  glm::vec4 face_normal;
-} triangle_t;
+  glm::vec4 ccs_position;
+  glm::vec4 ccs_normal;
+  glm::vec4 color;
+  float ww = 1.0;
+
+  glm::vec4 flatColor; // this attribute is not being interpolated
+  glm::vec4 flatCcsNormal; // this attribute is not being interpolated
+} interpolating_attr_t;
 
 typedef struct
 {
-  glm::vec4 world_position;
-  glm::vec4 clgl_position;
-  glm::vec4 ccs_position;
-  glm::vec4 normal;
-  glm::vec4 color_rgba;
-  float ww = 1.0;
-} interpolating_attr_t;
+  glm::vec4 vertices[3];        // Homogeneous Clipping Space
+  glm::vec4 mapped_vertices[3]; // Viewport
+  glm::vec4 normals[3];
+  glm::vec4 face_normal;
+  interpolating_attr_t attrs[3];
+} triangle_t;
 
 typedef struct
 {
@@ -67,6 +67,7 @@ typedef struct
   glm::vec4 vertex_bottom;
   glm::vec4 vertex_delta;
   float inc_x, inc_z;
+  float min_x, max_x;
   interpolating_attr_t top;
   interpolating_attr_t bottom;
 } edge_t;

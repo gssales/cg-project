@@ -1,31 +1,5 @@
 #include "scene.h"
 
-glm::vec4 AmbientLighting(glm::vec4 color)
-{
-  return color * 0.2f;
-}
-
-glm::vec4 DiffuseLighting(glm::mat4 view, glm::vec4 color, glm::vec4 normal, glm::vec4 world_position)
-{
-  glm::vec4 light_position = glm::inverse(view) * glm::vec4(2.0,2.0,2.0,1.0);
-  glm::vec4 n = glm::normalize(normal);
-  glm::vec4 l = glm::normalize(light_position - world_position);
-  return color * std::max(0.0f, glm::dot(n, l));
-}
-
-glm::vec4 SpecularLighting(glm::mat4 view, glm::vec4 normal, glm::vec4 world_position)
-{
-  glm::vec4 eye_position   = glm::inverse(view) * glm::vec4(0.0,0.0,0.0,1.0);
-  glm::vec4 light_position = glm::inverse(view) * glm::vec4(2.0,2.0,2.0,1.0);
-  glm::vec4 n = glm::normalize(normal);
-  glm::vec4 l = glm::normalize(light_position - world_position);
-  glm::vec4 v = glm::normalize(eye_position - world_position);
-  float q = 120.0;
-  glm::vec4 r = glm::normalize(2.0f * n * glm::dot(l,n) -l);
-  glm::vec4 h = glm::normalize(v + l);
-  return glm::vec4(0.5) * std::pow(std::max(0.0f, glm::dot(h, r)), q);
-}
-
 void SuperScene::DrawScene()
 {
   glBindVertexArray(this->vao_id);
@@ -274,126 +248,206 @@ void Close2GL_Scene::SetModel(model_t model)
   this->model = model;
 }
 
+void EraseTriangleWithVertex(std::vector<model_triangle_t> *triangles, int index)
+{
+  auto it = triangles->begin();
+  while (it != triangles->end())
+    if (it->indices[0] == index || it->indices[1] == index || it->indices[2] == index)
+      it = triangles->erase(it);
+    else
+      it++;
+}
+
 void Close2GL_Scene::TransformModel(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix, glm::mat4 viewport_matrix)
 {
-  triangles.clear();
+  this->triangles.clear();
 
-  glm::mat4 to_ccs = view_matrix * model_matrix;
   glm::mat4 mvp = projection_matrix * view_matrix * this->model_matrix;
 
-  std::vector<float> *vertices = &this->model.vertices;
-  std::vector<float> *normals = &this->model.normals;
-  for (int i = 0; i < vertices->size(); i += 12)
+  std::vector<model_triangle_t> model_triangles = this->model.triangles;
+  std::vector<glm::vec4> model_vertices= this->model.vertices;
+
+  int vertex_index = 0;
+  for (glm::vec4 &v : model_vertices) 
   {
-    // OBJECT SPACE
-    glm::vec4 v0 = glm::vec4(  (*vertices)[i], (*vertices)[i+1], (*vertices)[i+2], (*vertices)[i+3]);
-    glm::vec4 v1 = glm::vec4((*vertices)[i+4], (*vertices)[i+5], (*vertices)[i+6], (*vertices)[i+7]);
-    glm::vec4 v2 = glm::vec4((*vertices)[i+8], (*vertices)[i+9], (*vertices)[i+10], (*vertices)[i+11]);
+    v = mvp * v;
+    if (v.w <= 0.0) {
+      EraseTriangleWithVertex(&model_triangles, vertex_index);
+      vertex_index++;
+      continue;
+    }
 
+    glm::vec4 ndc_v = v / v.w;
+    if (std::abs(ndc_v.x) > 1.0f || std::abs(ndc_v.y) > 1.0f || std::abs(ndc_v.z) > 1.0f) {
+      EraseTriangleWithVertex(&model_triangles, vertex_index);
+      vertex_index++;
+      continue;
+    }
+
+    vertex_index++;
+  }
+
+  glm::vec4 color = glm::vec4(state.gui_object_color[0], state.gui_object_color[1], state.gui_object_color[2], state.gui_object_color[3]);
+  glm::vec4 debug_colors[3] = { glm::vec4(1.0, 0.0, 0.0, 1.0), glm::vec4(0.0, 1.0, 0.0, 1.0), glm::vec4(0.0, 0.0, 1.0, 1.0) };
+
+  for (model_triangle_t model_triangle : model_triangles) {
     triangle_t t;
-    t.world_vertices[0] = model_matrix * v0;
-    t.world_vertices[1] = model_matrix * v1;
-    t.world_vertices[2] = model_matrix * v2;
 
-    t.ccs_vertices[0] = to_ccs * v0;
-    t.ccs_vertices[1] = to_ccs * v1;
-    t.ccs_vertices[2] = to_ccs * v2;
-    // CAMERA/EYE SPACE
+    glm::vec4 v0 = model_vertices[model_triangle.indices[0]];
+    glm::vec4 v1 = model_vertices[model_triangle.indices[1]];
+    glm::vec4 v2 = model_vertices[model_triangle.indices[2]];
 
-    t.vertices[0] = mvp * v0;
-    t.vertices[1] = mvp * v1;
-    t.vertices[2] = mvp * v2;
-    // HOMOGENUOUS CLIPPING SPACE
+    t.vertices[0] = v0;
+    t.vertices[1] = v1;
+    t.vertices[2] = v2;
 
-    if (t.vertices[0].w <= 0 || t.vertices[1].w <= 0 || t.vertices[2].w <= 0)
-      continue;
-
-    glm::vec4 ndc_vertices[3];
-    ndc_vertices[0] = t.vertices[0] / t.vertices[0].w;
-    ndc_vertices[1] = t.vertices[1] / t.vertices[1].w;
-    ndc_vertices[2] = t.vertices[2] / t.vertices[2].w;
-    // NORMALIZED DEVICE SPACE
-
-    if (std::abs(ndc_vertices[0].x) > 1.0f 
-        || std::abs(ndc_vertices[0].y) > 1.0f 
-        || std::abs(ndc_vertices[0].z) > 1.0f)
-      continue;
-
-    if (std::abs(ndc_vertices[1].x) > 1.0f 
-        || std::abs(ndc_vertices[1].y) > 1.0f 
-        || std::abs(ndc_vertices[1].z) > 1.0f)
-      continue;
-
-    if (std::abs(ndc_vertices[2].x) > 1.0f 
-        || std::abs(ndc_vertices[2].y) > 1.0f 
-        || std::abs(ndc_vertices[2].z) > 1.0f)
-      continue;
-
-    t.vp_vertices[0] = viewport_matrix * ndc_vertices[0];
-    t.vp_vertices[1] = viewport_matrix * ndc_vertices[1];
-    t.vp_vertices[2] = viewport_matrix * ndc_vertices[2];
-
+    t.mapped_vertices[0] = viewport_matrix * (v0 / v0.w);
+    t.mapped_vertices[1] = viewport_matrix * (v1 / v1.w);
+    t.mapped_vertices[2] = viewport_matrix * (v2 / v2.w);
+    
     if (state.face_culling)
     {
-      bool is_front_facing = FaceCulling(t.vp_vertices, state.front_face);
+      bool is_front_facing = FaceCulling(t.mapped_vertices, state.front_face);
       if (!is_front_facing)
         continue;
     }
 
-    t.normals[0] = glm::vec4(  (*normals)[i], (*normals)[i+1], (*normals)[i+2], (*normals)[i+3]);
-    t.normals[1] = glm::vec4((*normals)[i+4], (*normals)[i+5], (*normals)[i+6], (*normals)[i+7]);
-    t.normals[2] = glm::vec4((*normals)[i+8], (*normals)[i+9], (*normals)[i+10], (*normals)[i+11]);
+    if (state.use_raw_normals) {
+      int i0 = 4 * model_triangle.indices[0];
+      int i1 = 4 * model_triangle.indices[1];
+      int i2 = 4 * model_triangle.indices[2];
+      
+      t.normals[0] = glm::vec4(model.raw_normals[i0], model.raw_normals[i0+1], model.raw_normals[i0+2], model.raw_normals[i0+3]);
+      t.normals[1] = glm::vec4(model.raw_normals[i1], model.raw_normals[i1+1], model.raw_normals[i1+2], model.raw_normals[i1+3]);
+      t.normals[2] = glm::vec4(model.raw_normals[i2], model.raw_normals[i2+1], model.raw_normals[i2+2], model.raw_normals[i2+3]);
 
-    glm::vec4 u = t.vertices[1] - t.vertices[0];
-    glm::vec4 v = t.vertices[2] - t.vertices[0];
-    t.face_normal.x = u.y*v.z - u.z*v.y;
-    t.face_normal.y = u.z*v.x - u.x*v.z;
-    t.face_normal.z = u.x*v.y - u.y*v.x;
-    t.face_normal.w = 0.0f;
+      t.face_normal = model_triangle.face_normal;
+    } else
+    if (state.use_calculated_normals) {
+      t.normals[0] = model.calculated_normals[model_triangle.indices[0]];
+      t.normals[1] = model.calculated_normals[model_triangle.indices[1]];
+      t.normals[2] = model.calculated_normals[model_triangle.indices[2]];
+
+      t.face_normal = model_triangle.calculated_face_normal;
+    } else {
+      t.normals[0] = model.normals[model_triangle.indices[0]];
+      t.normals[1] = model.normals[model_triangle.indices[1]];
+      t.normals[2] = model.normals[model_triangle.indices[2]];
+
+      t.face_normal = model_triangle.face_normal;
+    }
+
+    for (int i = 0; i < 3; i++) {
+      t.attrs[i].ww = 1.0f / t.vertices[i].w;
+
+      t.attrs[i].ccs_position = (glm::inverse(projection_matrix) * t.vertices[i]) * t.attrs[i].ww;
+      t.attrs[i].ccs_normal = (view_matrix * model_matrix * t.normals[i]) * t.attrs[i].ww;
+
+      glm::vec4 c = state.debug_colors ? debug_colors[i] : color;
+      t.attrs[i].color = c * t.attrs[i].ww; 
+      t.attrs[i].flatColor = c;
+      t.attrs[i].flatCcsNormal = view_matrix * model_matrix * t.face_normal;
+    }
 
     this->triangles.push_back(t);
   }
 }
 
+glm::vec4 AmbientLighting(glm::vec4 color)
+{
+  return color * 0.2f;
+}
+
+glm::vec4 DiffuseLighting(glm::vec4 color, glm::vec4 ccs_normal, glm::vec4 ccs_position)
+{
+  glm::vec4 light_position = glm::vec4(2.0,2.0,2.0,1.0);
+  glm::vec4 n = glm::normalize(ccs_normal);
+  glm::vec4 l = glm::normalize(light_position - ccs_position);
+  return color * std::max(0.0f, glm::dot(n, l));
+}
+
+glm::vec4 SpecularLighting(glm::vec4 ccs_normal, glm::vec4 ccs_position)
+{
+  glm::vec4 eye_position   = glm::vec4(0.0,0.0,0.0,1.0);
+  glm::vec4 light_position = glm::vec4(2.0,2.0,2.0,1.0);
+  glm::vec4 n = glm::normalize(ccs_normal);
+  glm::vec4 l = glm::normalize(light_position - ccs_position);
+  glm::vec4 v = glm::normalize(eye_position - ccs_position);
+  float q = 120.0;
+  glm::vec4 r = glm::normalize(2.0f * n * glm::dot(l,n) -l);
+  glm::vec4 h = glm::normalize(v + l);
+  return glm::vec4(0.5) * std::pow(std::max(0.0f, glm::dot(h, r)), q);
+}
+
+glm::vec4 Lighting(scene_state_t state, interpolating_attr_t attr, glm::vec4 normal)
+{
+  int lighting = state.lighting_mode;
+
+  int count_terms = 0;
+  glm::vec4 specular_term = glm::vec4(0.0);
+  if (lighting >= SPECULAR_LIGHT) {
+    lighting -= SPECULAR_LIGHT;
+    specular_term = SpecularLighting(normal, attr.ccs_position);
+    count_terms++;
+  }
+
+  glm::vec4 diffuse_term = glm::vec4(0.0);
+  if (lighting >= DIFFUSE_LIGHT) {
+    lighting -= DIFFUSE_LIGHT;
+    diffuse_term = DiffuseLighting(attr.color, normal, attr.ccs_position);
+    count_terms++;
+  }
+  
+  glm::vec4 ambient_term = glm::vec4(0.0);
+  if (lighting >= AMBIENT_LIGHT) {
+    lighting -= AMBIENT_LIGHT;
+    ambient_term = AmbientLighting(attr.color);
+    count_terms++;
+  }
+
+  return ambient_term + diffuse_term + specular_term;
+}
+
+void Shading(scene_state_t state, interpolating_attr_t *attr)
+{
+  attr->ccs_position /= attr->ww;
+  attr->ccs_normal /= attr->ww;
+  attr->color /= attr->ww;
+
+  glm::vec4 color;
+  switch (state.shading_mode)
+  {
+    case FLAT_SHADING:
+    case FLAT_PHONG_SHADING:
+      color = Lighting(state, *attr, attr->flatCcsNormal);
+      break;
+      
+    case GOURAUD_SHADING:
+    case PHONG_SHADING:
+      color = Lighting(state, *attr, attr->ccs_normal);
+  }
+
+  if (state.shading_mode == FLAT_SHADING)
+    attr->flatColor = color;
+  else
+    attr->color = color;
+  
+  attr->ccs_position *= attr->ww;
+  attr->ccs_normal *= attr->ww;
+  attr->color *= attr->ww;
+}
+
 void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix, glm::mat4 viewport_matrix)
 {
-
-  glm::vec4 color = glm::vec4(state.gui_object_color[0], state.gui_object_color[1], state.gui_object_color[2], state.gui_object_color[3]);
-  glm::vec4 colors[3] = { glm::vec4(1.0, 0.0, 0.0, 1.0), glm::vec4(0.0, 1.0, 0.0, 1.0), glm::vec4(0.0, 0.0, 1.0, 1.0) };
-
-  for (int i = 0; i < this->triangles.size(); i++)
+  for (triangle_t t : this->triangles)
   {
-    triangle_t t = this->triangles[i];
-    interpolating_attr_t vertex_attrs[3];
-    for (int a = 0; a < 3; a++)
-    {
-      float w = t.vertices[a].w;
-      interpolating_attr_t attrs;
-      attrs.world_position = t.world_vertices[a] / w;
-      attrs.clgl_position  = t.vertices[a] / w;
-      attrs.ccs_position   = t.ccs_vertices[a] / w;
-      attrs.normal     = t.normals[a] / w;
-      attrs.ww        /= w;
-
-      if (state.debug)
-        color = colors[a];
-      attrs.color_rgba = color; // vertex color shader
-      if (state.shading_mode == GOURAUD_AD_SHADING) {
-        attrs.color_rgba = AmbientLighting(color);
-        if (state.lights_on)
-          attrs.color_rgba += DiffuseLighting(view_matrix, color, t.normals[a], t.world_vertices[a]);
+    for (int a = 0; a < 3; a++) {
+      if (state.shading_mode != NO_SHADING)
+        Shading(state, &(t.attrs[a]));
+      if (state.shading_mode == FLAT_SHADING) {
+        t.attrs[a].flatColor = t.attrs[0].flatColor;
+        t.attrs[a].flatCcsNormal = t.attrs[0].flatCcsNormal;
       }
-
-      if (state.shading_mode == GOURAUD_ADS_SHADING) {
-        attrs.color_rgba = AmbientLighting(color);
-        if (state.lights_on) {
-          attrs.color_rgba += DiffuseLighting(view_matrix, color, t.normals[a], t.world_vertices[a]);
-          attrs.color_rgba += SpecularLighting(view_matrix, t.normals[a], t.world_vertices[a]);
-        }
-      }
-      attrs.color_rgba /= w; // vertex color shader
-
-      vertex_attrs[a] = attrs;
     }
 
     edge_t* edges = new edge_t[3];
@@ -401,65 +455,60 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 view_matrix, glm::
     {
       int next_e = (e+1) % 3;
       edges[e] = this->FindEdge(
-        t.vp_vertices[e],      vertex_attrs[e],
-        t.vp_vertices[next_e], vertex_attrs[next_e]
-      );
+        t.mapped_vertices[e],      t.attrs[e],
+        t.mapped_vertices[next_e], t.attrs[next_e]);
     }
-
+    
     edges = this->OrderEdges(edges);
     
     int active_edge = 1;
     int max_inc = std::round(edges[0].vertex_delta.y);
 
-    int y, x; 
+    int y, x;    
     glm::vec4 p_a, p_b;
     interpolating_attr_t attr_a, attr_b;
     for (int inc_y = 0; inc_y < max_inc; inc_y++)
     {
       int inc = inc_y;
 
+      // ARESTA PRINCIPAL
       p_a = edges[0].vertex_top;
       p_a.y = p_a.y + inc;
       p_a.x = p_a.x + inc * edges[0].inc_x;
       p_a.z = p_a.z + inc * edges[0].inc_z;
       y = std::round(p_a.y);
       x = std::round(p_a.x);
-
+      
       attr_a = this->Interpolate(edges[0].bottom, edges[0].top, 0, max_inc, inc);
 
-      glm::vec4 fragColor = attr_a.color_rgba / attr_a.ww;
-      if (state.shading_mode == PHONG_SHADING) {
-        glm::vec4 attr_color = attr_a.color_rgba / attr_a.ww;
-        glm::vec4 attr_normal = attr_a.normal / attr_a.ww;
-        glm::vec4 attr_pos = attr_a.world_position / attr_a.ww;
-        fragColor = AmbientLighting(attr_color);
-        if (state.lights_on) {
-          fragColor += DiffuseLighting(view_matrix, attr_color, attr_normal, attr_pos);
-          fragColor += SpecularLighting(view_matrix, attr_normal, attr_pos);
-        }
-        fragColor = glm::pow(fragColor, glm::vec4(1.0)/2.2f);
-      } 
-      attr_a.color_rgba = fragColor * attr_a.ww;
-      this->ChangeBuffer(state, x, y, p_a.z, vec4_to_rgba(fragColor));
+      glm::vec4 color;
+      switch (state.shading_mode)
+      {
+        case FLAT_SHADING:
+          color = t.attrs[0].flatColor;
+          break;
+
+        case PHONG_SHADING:
+        case FLAT_PHONG_SHADING:
+          Shading(state, &attr_a);
+
+        case GOURAUD_SHADING:
+        case NO_SHADING:
+        default:
+          color = attr_a.color / attr_a.ww;
+      }
+      color = glm::pow(color, glm::vec4(1.0)/2.2f);
+
+      this->ChangeBuffer(state, x, y, p_a.z, vec4_to_rgba(color));
+
+      // ARESTA SECUNDÁRIA
       
       if (active_edge == 2)
         inc -= edges[1].vertex_delta.y;
 
-      float min_x, max_x;
-      if (edges[active_edge].vertex_top.x >= edges[active_edge].vertex_bottom.x)
-      {
-        max_x = edges[active_edge].vertex_top.x;
-        min_x = edges[active_edge].vertex_bottom.x;
-      }
-      else
-      {
-        max_x = edges[active_edge].vertex_bottom.x;
-        min_x = edges[active_edge].vertex_top.x;
-      }
-
       p_b = edges[active_edge].vertex_top;
       p_b.y = p_b.y + inc;
-      p_b.x = glm::clamp(p_b.x + inc * edges[active_edge].inc_x, min_x, max_x);
+      p_b.x = glm::clamp(p_b.x + inc * edges[active_edge].inc_x, edges[active_edge].min_x, edges[active_edge].max_x);
       p_b.z = p_b.z + inc * edges[active_edge].inc_z;
       y = std::round(p_b.y);
       x = std::round(p_b.x);
@@ -474,21 +523,26 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 view_matrix, glm::
 
       attr_b = this->Interpolate(edges[active_edge].bottom, edges[active_edge].top, 0, edges[active_edge].vertex_delta.y, inc);
 
-      fragColor = attr_b.color_rgba / attr_b.ww;
-      if (state.shading_mode == PHONG_SHADING) {
-        glm::vec4 attr_color = attr_b.color_rgba / attr_b.ww;
-        glm::vec4 attr_normal = attr_b.normal / attr_b.ww;
-        glm::vec4 attr_pos = attr_b.world_position / attr_b.ww;
-        fragColor = AmbientLighting(attr_color);
-        if (state.lights_on) {
-          fragColor += DiffuseLighting(view_matrix, attr_color, attr_normal, attr_pos);
-          fragColor += SpecularLighting(view_matrix, attr_normal, attr_pos);
-        }
-        fragColor = glm::pow(fragColor, glm::vec4(1.0)/2.2f);
+      switch (state.shading_mode)
+      {
+        case FLAT_SHADING:
+          color = t.attrs[0].flatColor;
+          break;
+
+        case PHONG_SHADING:
+        case FLAT_PHONG_SHADING:
+          Shading(state, &attr_b);
+
+        case GOURAUD_SHADING:
+        case NO_SHADING:
+        default:
+          color = attr_b.color / attr_b.ww;
       }
-      attr_b.color_rgba = fragColor * attr_a.ww;
-      this->ChangeBuffer(state, x, y, p_b.z, vec4_to_rgba(fragColor));
+      color = glm::pow(color, glm::vec4(1.0)/2.2f);
       
+      this->ChangeBuffer(state, x, y, p_b.z, vec4_to_rgba(color));
+      
+      // PREENCHIMENTO
       if (state.polygon_mode == GL_FILL)
       {
         float my = (p_a.y + p_b.y) / 2.0f;
@@ -519,6 +573,9 @@ edge_t Close2GL_Scene::FindEdge(glm::vec4 v0, interpolating_attr_t v0_attr, glm:
     e.vertex_bottom = v0;
     e.bottom = v0_attr;
   }
+  
+  e.min_x = std::min(v0.x, v1.x);
+  e.max_x = std::max(v0.x, v1.x);
 
   glm::vec4 d = e.vertex_bottom - e.vertex_top;
   if (std::abs(d.y) >= 1.0)
@@ -609,12 +666,13 @@ interpolating_attr_t Close2GL_Scene::Interpolate(interpolating_attr_t attr_0, in
 {
   float alpha = (value - min) / (max - min);
   interpolating_attr_t result;
-  result.color_rgba     = alpha * attr_0.color_rgba     + (1.0f - alpha) * attr_1.color_rgba;
-  result.normal         = alpha * attr_0.normal         + (1.0f - alpha) * attr_1.normal;
-  result.world_position = alpha * attr_0.world_position + (1.0f - alpha) * attr_1.world_position;
-  result.clgl_position  = alpha * attr_0.clgl_position  + (1.0f - alpha) * attr_1.clgl_position;
-  result.ccs_position   = alpha * attr_0.ccs_position   + (1.0f - alpha) * attr_1.ccs_position;
-  result.ww             = alpha * attr_0.ww             + (1.0f - alpha) * attr_1.ww;
+  result.color        = alpha * attr_0.color        + (1.0f - alpha) * attr_1.color;
+  result.ccs_normal   = alpha * attr_0.ccs_normal   + (1.0f - alpha) * attr_1.ccs_normal;
+  result.ccs_position = alpha * attr_0.ccs_position + (1.0f - alpha) * attr_1.ccs_position;
+  result.ww           = alpha * attr_0.ww           + (1.0f - alpha) * attr_1.ww;
+
+  result.flatColor     = attr_0.flatColor;
+  result.flatCcsNormal = attr_1.flatCcsNormal;
   return result;
 }
 
@@ -631,20 +689,25 @@ void Close2GL_Scene::RasterScanline(scene_state_t state, scanline_t line, glm::m
 
     interpolating_attr_t attr = this->Interpolate(line.bottom, line.top, 0, max_inc, inc_x);
 
-    glm::vec4 fragColor = attr.color_rgba / attr.ww;
-    if (state.shading_mode == PHONG_SHADING) {
-      glm::vec4 attr_color = attr.color_rgba / attr.ww;
-      glm::vec4 attr_normal = attr.normal / attr.ww;
-      glm::vec4 attr_pos = attr.world_position / attr.ww;
-      fragColor = AmbientLighting(attr_color);
-      if (state.lights_on) {
-        fragColor += DiffuseLighting(view_matrix, attr_color, attr_normal, attr_pos);
-        fragColor += SpecularLighting(view_matrix, attr_normal, attr_pos);
-      }
-      fragColor = glm::pow(fragColor, glm::vec4(1.0)/2.2f);
+    glm::vec4 color;
+    switch (state.shading_mode)
+    {
+      case FLAT_SHADING:
+        color = attr.flatColor;
+        break;
+
+      case PHONG_SHADING:
+      case FLAT_PHONG_SHADING:
+        Shading(state, &attr);
+
+      case GOURAUD_SHADING:
+      case NO_SHADING:
+      default:
+        color = attr.color / attr.ww;
     }
-    attr.color_rgba = fragColor * attr.ww;
-    this->ChangeBuffer(state, x, y, z, vec4_to_rgba(fragColor));
+    color = glm::pow(color, glm::vec4(1.0)/2.2f);
+
+    this->ChangeBuffer(state, x, y, z, vec4_to_rgba(color));
   }
 }
 
