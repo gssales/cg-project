@@ -10,6 +10,8 @@ void SuperScene::DrawScene()
     this->vertex_count);
 }
 
+
+
 /* ==================== OpenGL ====================== */
 
 void OpenGL_Scene::LoadModelToScene(scene_state_t state, model_t model)
@@ -130,6 +132,8 @@ void OpenGL_Scene::New_Frame()
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
+
+
 /* ==================== Close2GL ====================== */
 
 void Close2GL_Scene::LoadTrianglesToScene()
@@ -224,6 +228,11 @@ void Close2GL_Scene::New_Frame()
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
+void Close2GL_Scene::SetModel(model_t model)
+{
+  this->model = model;
+}
+
 void Close2GL_Scene::ResizeBuffers(scene_state_t state)
 {
   delete[] this->color_buffer;
@@ -243,20 +252,9 @@ void Close2GL_Scene::ResizeBuffers(scene_state_t state)
   this->texture_id = tex_id;
 }
 
-void Close2GL_Scene::SetModel(model_t model)
-{
-  this->model = model;
-}
 
-void EraseTriangleWithVertex(std::vector<model_triangle_t> *triangles, int index)
-{
-  auto it = triangles->begin();
-  while (it != triangles->end())
-    if (it->indices[0] == index || it->indices[1] == index || it->indices[2] == index)
-      it = triangles->erase(it);
-    else
-      it++;
-}
+
+/* ==================== Close2GL PRIVATE ====================== */
 
 void Close2GL_Scene::TransformModel(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix, glm::mat4 viewport_matrix)
 {
@@ -357,6 +355,326 @@ void Close2GL_Scene::TransformModel(scene_state_t state, glm::mat4 view_matrix, 
   }
 }
 
+void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix, glm::mat4 viewport_matrix)
+{
+  for (triangle_t t : this->triangles)
+  {
+    for (int a = 0; a < 3; a++) {
+      if (state.shading_mode != NO_SHADING)
+        Shading(state, &(t.attrs[a]));
+      if (state.shading_mode == FLAT_SHADING) {
+        t.attrs[a].flatColor = t.attrs[0].flatColor;
+        t.attrs[a].flatCcsNormal = t.attrs[0].flatCcsNormal;
+      }
+    }
+
+    edge_t* edges = new edge_t[3];
+    for (int e = 0; e < 3; e++)
+    {
+      int next_e = (e+1) % 3;
+      edges[e] = FindEdge(
+        t.mapped_vertices[e],      t.attrs[e],
+        t.mapped_vertices[next_e], t.attrs[next_e]);
+    }
+    
+    edges = OrderEdges(edges);
+    
+    int active_edge = 1;
+    int max_inc = std::round(edges[0].vertex_delta.y);
+
+    int y, x;    
+    glm::vec4 p_a, p_b;
+    interpolating_attr_t attr_a, attr_b;
+    for (int inc_y = 0; inc_y < max_inc; inc_y++)
+    {
+      int inc = inc_y;
+
+      // ARESTA PRINCIPAL
+      p_a = edges[0].vertex_top;
+      p_a.y = p_a.y + inc;
+      p_a.x = p_a.x + inc * edges[0].inc_x;
+      p_a.z = p_a.z + inc * edges[0].inc_z;
+      y = std::round(p_a.y);
+      x = std::round(p_a.x);
+      
+      attr_a = Interpolate(edges[0].bottom, edges[0].top, 0, max_inc, inc);
+
+      glm::vec4 color;
+      switch (state.shading_mode)
+      {
+        case FLAT_SHADING:
+          color = t.attrs[0].flatColor;
+          break;
+
+        case PHONG_SHADING:
+        case FLAT_PHONG_SHADING:
+          Shading(state, &attr_a);
+
+        case GOURAUD_SHADING:
+        case NO_SHADING:
+        default:
+          color = attr_a.color / attr_a.ww;
+      }
+      color = glm::pow(color, glm::vec4(1.0)/2.2f);
+
+      this->ChangeBuffer(state, x, y, p_a.z, vec4_to_rgba(color));
+
+      // ARESTA SECUNDÁRIA
+      
+      if (active_edge == 2)
+        inc -= edges[1].vertex_delta.y;
+
+      p_b = edges[active_edge].vertex_top;
+      p_b.y = p_b.y + inc;
+      p_b.x = glm::clamp(p_b.x + inc * edges[active_edge].inc_x, edges[active_edge].min_x, edges[active_edge].max_x);
+      p_b.z = p_b.z + inc * edges[active_edge].inc_z;
+      y = std::round(p_b.y);
+      x = std::round(p_b.x);
+
+      if (std::abs(edges[active_edge].vertex_delta.y) < 0.5f)
+      {
+        scanline_t sl = FindScanline(
+            edges[active_edge].vertex_top,    edges[active_edge].top, 
+            edges[active_edge].vertex_bottom, edges[active_edge].bottom);
+        this->RasterScanline(state, sl, view_matrix);
+      }
+
+      attr_b = Interpolate(edges[active_edge].bottom, edges[active_edge].top, 0, edges[active_edge].vertex_delta.y, inc);
+
+      switch (state.shading_mode)
+      {
+        case FLAT_SHADING:
+          color = t.attrs[0].flatColor;
+          break;
+
+        case PHONG_SHADING:
+        case FLAT_PHONG_SHADING:
+          Shading(state, &attr_b);
+
+        case GOURAUD_SHADING:
+        case NO_SHADING:
+        default:
+          color = attr_b.color / attr_b.ww;
+      }
+      color = glm::pow(color, glm::vec4(1.0)/2.2f);
+      
+      this->ChangeBuffer(state, x, y, p_b.z, vec4_to_rgba(color));
+      
+      // PREENCHIMENTO
+      if (state.polygon_mode == GL_FILL)
+      {
+        float my = (p_a.y + p_b.y) / 2.0f;
+        p_a.y = my;
+        p_b.y = my;
+        scanline_t sl = FindScanline(glm::make_vec4(p_a), attr_a, glm::make_vec4(p_b), attr_b);
+        this->RasterScanline(state, sl, view_matrix);
+      }
+
+      if (active_edge == 1 && p_b.y > edges[1].vertex_bottom.y)
+        active_edge = 2;
+    }
+  }
+}
+
+void Close2GL_Scene::RasterScanline(scene_state_t state, scanline_t line, glm::mat4 view_matrix)
+{
+  int max_inc = std::ceil(line.vertex_delta.x);
+  int x, y;
+  float z;
+  y = std::round((line.vertex_top.y + line.vertex_bottom.y) / 2.0f);
+  for (int inc_x = 0; inc_x < max_inc; inc_x++)
+  {
+    z = line.vertex_top.z + inc_x * line.inc_z;
+    x = std::round(line.vertex_top.x + inc_x);
+
+    interpolating_attr_t attr = Interpolate(line.bottom, line.top, 0, max_inc, inc_x);
+
+    glm::vec4 color;
+    switch (state.shading_mode)
+    {
+      case FLAT_SHADING:
+        color = attr.flatColor;
+        break;
+
+      case PHONG_SHADING:
+      case FLAT_PHONG_SHADING:
+        Shading(state, &attr);
+
+      case GOURAUD_SHADING:
+      case NO_SHADING:
+      default:
+        color = attr.color / attr.ww;
+    }
+    color = glm::pow(color, glm::vec4(1.0)/2.2f);
+
+    this->ChangeBuffer(state, x, y, z, vec4_to_rgba(color));
+  }
+}
+
+void Close2GL_Scene::ChangeBuffer(scene_state_t state, int x, int y, float z, rgba_t color)
+{
+  if (x < 0 || y < 0 || x >= state.screen_width || y >= state.screen_height)
+    return;
+  int index = (state.screen_height - y -1)*state.screen_width+x % this->buffer_size;
+  if (z < this->depth_buffer[index])
+  {
+    this->depth_buffer[index] = z;
+    this->color_buffer[index] = color;
+  }
+}
+
+
+/* ==================== Close2GL AUXILIAR ====================== */
+
+rgba_t vec4_to_rgba(glm::vec4 vec)
+{
+  rgba_t c;
+  c.r = vec.x;
+  c.g = vec.g;
+  c.b = vec.b;
+  c.a = vec.a;
+  return c;
+}
+
+void EraseTriangleWithVertex(std::vector<model_triangle_t> *triangles, int index)
+{
+  auto it = triangles->begin();
+  while (it != triangles->end())
+    if (it->indices[0] == index || it->indices[1] == index || it->indices[2] == index)
+      it = triangles->erase(it);
+    else
+      it++;
+}
+
+bool FaceCulling(glm::vec4 *vertices, int face_orientation)
+{
+  glm::vec4 v0 = vertices[0];
+  glm::vec4 v1 = vertices[1];
+  glm::vec4 v2 = vertices[2];
+
+  float a = (v0.x*v1.y - v1.x*v0.y) + (v1.x*v2.y - v2.x*v1.y) + (v2.x*v0.y - v0.x*v2.y);
+
+  return (face_orientation == GL_CW) && (a > 0) || (a < 0);
+}
+
+edge_t FindEdge(glm::vec4 v0, interpolating_attr_t v0_attr, glm::vec4 v1, interpolating_attr_t v1_attr)
+{
+  edge_t e;
+
+  if (v0.y < v1.y) {
+    e.vertex_top    = v0;
+    e.top    = v0_attr;
+    e.vertex_bottom = v1;
+    e.bottom = v1_attr;
+  } else {
+    e.vertex_top    = v1;
+    e.top    = v1_attr;
+    e.vertex_bottom = v0;
+    e.bottom = v0_attr;
+  }
+  
+  e.min_x = std::min(v0.x, v1.x);
+  e.max_x = std::max(v0.x, v1.x);
+
+  glm::vec4 d = e.vertex_bottom - e.vertex_top;
+  if (std::abs(d.y) >= 1.0)
+  {
+    e.inc_x = d.x / d.y;
+    e.inc_z = d.z / d.y;
+  }
+  else
+  {
+    e.inc_x = d.x;
+    e.inc_z = d.z;
+  }
+  e.vertex_delta = d;
+  
+  return e;
+}
+
+scanline_t FindScanline(glm::vec4 v0, interpolating_attr_t v0_attr, glm::vec4 v1, interpolating_attr_t v1_attr)
+{
+  scanline_t sl;
+
+  if (v0.x < v1.x) {
+    sl.vertex_top    = v0;
+    sl.top    = v0_attr;
+    sl.vertex_bottom = v1;
+    sl.bottom = v1_attr;
+  } else {
+    sl.vertex_top    = v1;
+    sl.top    = v1_attr;
+    sl.vertex_bottom = v0;
+    sl.bottom = v0_attr;
+  }
+
+  glm::vec4 d = sl.vertex_bottom - sl.vertex_top;
+  sl.inc_x = 1;
+  sl.inc_z = d.z / d.x;
+
+  sl.vertex_delta = d;
+  
+  return sl;
+}
+
+edge_t* OrderEdges(edge_t* edges)
+{
+  float bottom_y = 0.0f, 
+    top_y = std::numeric_limits<float>::max(), 
+    tallest_y = 0.0f;
+  bool has_horizontal_edge = false;
+  for (int i = 0; i < 3; i++)
+  {
+    tallest_y = std::max(tallest_y, std::abs(edges[i].vertex_delta.y));
+    bottom_y  = std::max(bottom_y, edges[i].vertex_bottom.y);
+    top_y     = std::min(top_y,    edges[i].vertex_top.y);
+    has_horizontal_edge = has_horizontal_edge || (edges[i].vertex_delta.y == 0.0f);
+  }
+
+  edge_t* new_edges = new edge_t[3];
+  for (int i = 0; i < 3; i++)
+  {
+    if (has_horizontal_edge)
+      if (edges[i].vertex_delta.y == 0.0f)
+        if (edges[i].vertex_top.y == top_y)
+          new_edges[1] = edges[i];
+        else
+          new_edges[2] = edges[i];
+      else
+        if (new_edges[0].vertex_top.w == 0.0f)
+          new_edges[0] = edges[i];
+        else
+          if (new_edges[1].vertex_top.w == 0.0f)
+            new_edges[1] = edges[i];
+          else
+            new_edges[2] = edges[i];
+    else
+      if (edges[i].vertex_top.y == top_y)
+        if (edges[i].vertex_bottom.y == bottom_y)
+          new_edges[0] = edges[i];
+        else
+          new_edges[1] = edges[i];
+      else
+        new_edges[2] = edges[i];    
+  }
+
+  return new_edges;
+}
+
+interpolating_attr_t Interpolate(interpolating_attr_t attr_0, interpolating_attr_t attr_1, float min, float max, float value)
+{
+  float alpha = (value - min) / (max - min);
+  interpolating_attr_t result;
+  result.color        = alpha * attr_0.color        + (1.0f - alpha) * attr_1.color;
+  result.ccs_normal   = alpha * attr_0.ccs_normal   + (1.0f - alpha) * attr_1.ccs_normal;
+  result.ccs_position = alpha * attr_0.ccs_position + (1.0f - alpha) * attr_1.ccs_position;
+  result.ww           = alpha * attr_0.ww           + (1.0f - alpha) * attr_1.ww;
+
+  result.flatColor     = attr_0.flatColor;
+  result.flatCcsNormal = attr_1.flatCcsNormal;
+  return result;
+}
+
 glm::vec4 AmbientLighting(glm::vec4 color)
 {
   return color * 0.2f;
@@ -439,313 +757,6 @@ void Shading(scene_state_t state, interpolating_attr_t *attr)
   attr->ccs_position *= attr->ww;
   attr->ccs_normal *= attr->ww;
   attr->color *= attr->ww;
-}
-
-void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix, glm::mat4 viewport_matrix)
-{
-  for (triangle_t t : this->triangles)
-  {
-    for (int a = 0; a < 3; a++) {
-      if (state.shading_mode != NO_SHADING)
-        Shading(state, &(t.attrs[a]));
-      if (state.shading_mode == FLAT_SHADING) {
-        t.attrs[a].flatColor = t.attrs[0].flatColor;
-        t.attrs[a].flatCcsNormal = t.attrs[0].flatCcsNormal;
-      }
-    }
-
-    edge_t* edges = new edge_t[3];
-    for (int e = 0; e < 3; e++)
-    {
-      int next_e = (e+1) % 3;
-      edges[e] = this->FindEdge(
-        t.mapped_vertices[e],      t.attrs[e],
-        t.mapped_vertices[next_e], t.attrs[next_e]);
-    }
-    
-    edges = this->OrderEdges(edges);
-    
-    int active_edge = 1;
-    int max_inc = std::round(edges[0].vertex_delta.y);
-
-    int y, x;    
-    glm::vec4 p_a, p_b;
-    interpolating_attr_t attr_a, attr_b;
-    for (int inc_y = 0; inc_y < max_inc; inc_y++)
-    {
-      int inc = inc_y;
-
-      // ARESTA PRINCIPAL
-      p_a = edges[0].vertex_top;
-      p_a.y = p_a.y + inc;
-      p_a.x = p_a.x + inc * edges[0].inc_x;
-      p_a.z = p_a.z + inc * edges[0].inc_z;
-      y = std::round(p_a.y);
-      x = std::round(p_a.x);
-      
-      attr_a = this->Interpolate(edges[0].bottom, edges[0].top, 0, max_inc, inc);
-
-      glm::vec4 color;
-      switch (state.shading_mode)
-      {
-        case FLAT_SHADING:
-          color = t.attrs[0].flatColor;
-          break;
-
-        case PHONG_SHADING:
-        case FLAT_PHONG_SHADING:
-          Shading(state, &attr_a);
-
-        case GOURAUD_SHADING:
-        case NO_SHADING:
-        default:
-          color = attr_a.color / attr_a.ww;
-      }
-      color = glm::pow(color, glm::vec4(1.0)/2.2f);
-
-      this->ChangeBuffer(state, x, y, p_a.z, vec4_to_rgba(color));
-
-      // ARESTA SECUNDÁRIA
-      
-      if (active_edge == 2)
-        inc -= edges[1].vertex_delta.y;
-
-      p_b = edges[active_edge].vertex_top;
-      p_b.y = p_b.y + inc;
-      p_b.x = glm::clamp(p_b.x + inc * edges[active_edge].inc_x, edges[active_edge].min_x, edges[active_edge].max_x);
-      p_b.z = p_b.z + inc * edges[active_edge].inc_z;
-      y = std::round(p_b.y);
-      x = std::round(p_b.x);
-
-      if (std::abs(edges[active_edge].vertex_delta.y) < 0.5f)
-      {
-        scanline_t sl = this->FindScanline(
-            edges[active_edge].vertex_top,    edges[active_edge].top, 
-            edges[active_edge].vertex_bottom, edges[active_edge].bottom);
-        this->RasterScanline(state, sl, view_matrix);
-      }
-
-      attr_b = this->Interpolate(edges[active_edge].bottom, edges[active_edge].top, 0, edges[active_edge].vertex_delta.y, inc);
-
-      switch (state.shading_mode)
-      {
-        case FLAT_SHADING:
-          color = t.attrs[0].flatColor;
-          break;
-
-        case PHONG_SHADING:
-        case FLAT_PHONG_SHADING:
-          Shading(state, &attr_b);
-
-        case GOURAUD_SHADING:
-        case NO_SHADING:
-        default:
-          color = attr_b.color / attr_b.ww;
-      }
-      color = glm::pow(color, glm::vec4(1.0)/2.2f);
-      
-      this->ChangeBuffer(state, x, y, p_b.z, vec4_to_rgba(color));
-      
-      // PREENCHIMENTO
-      if (state.polygon_mode == GL_FILL)
-      {
-        float my = (p_a.y + p_b.y) / 2.0f;
-        p_a.y = my;
-        p_b.y = my;
-        scanline_t sl = this->FindScanline(glm::make_vec4(p_a), attr_a, glm::make_vec4(p_b), attr_b);
-        this->RasterScanline(state, sl, view_matrix);
-      }
-
-      if (active_edge == 1 && p_b.y > edges[1].vertex_bottom.y)
-        active_edge = 2;
-    }
-  }
-}
-
-edge_t Close2GL_Scene::FindEdge(glm::vec4 v0, interpolating_attr_t v0_attr, glm::vec4 v1, interpolating_attr_t v1_attr)
-{
-  edge_t e;
-
-  if (v0.y < v1.y) {
-    e.vertex_top    = v0;
-    e.top    = v0_attr;
-    e.vertex_bottom = v1;
-    e.bottom = v1_attr;
-  } else {
-    e.vertex_top    = v1;
-    e.top    = v1_attr;
-    e.vertex_bottom = v0;
-    e.bottom = v0_attr;
-  }
-  
-  e.min_x = std::min(v0.x, v1.x);
-  e.max_x = std::max(v0.x, v1.x);
-
-  glm::vec4 d = e.vertex_bottom - e.vertex_top;
-  if (std::abs(d.y) >= 1.0)
-  {
-    e.inc_x = d.x / d.y;
-    e.inc_z = d.z / d.y;
-  }
-  else
-  {
-    e.inc_x = d.x;
-    e.inc_z = d.z;
-  }
-  e.vertex_delta = d;
-  
-  return e;
-}
-
-scanline_t Close2GL_Scene::FindScanline(glm::vec4 v0, interpolating_attr_t v0_attr, glm::vec4 v1, interpolating_attr_t v1_attr)
-{
-  scanline_t sl;
-
-  if (v0.x < v1.x) {
-    sl.vertex_top    = v0;
-    sl.top    = v0_attr;
-    sl.vertex_bottom = v1;
-    sl.bottom = v1_attr;
-  } else {
-    sl.vertex_top    = v1;
-    sl.top    = v1_attr;
-    sl.vertex_bottom = v0;
-    sl.bottom = v0_attr;
-  }
-
-  glm::vec4 d = sl.vertex_bottom - sl.vertex_top;
-  sl.inc_x = 1;
-  sl.inc_z = d.z / d.x;
-
-  sl.vertex_delta = d;
-  
-  return sl;
-}
-
-edge_t* Close2GL_Scene::OrderEdges(edge_t* edges)
-{
-  float bottom_y = 0.0f, 
-    top_y = std::numeric_limits<float>::max(), 
-    tallest_y = 0.0f;
-  bool has_horizontal_edge = false;
-  for (int i = 0; i < 3; i++)
-  {
-    tallest_y = std::max(tallest_y, std::abs(edges[i].vertex_delta.y));
-    bottom_y  = std::max(bottom_y, edges[i].vertex_bottom.y);
-    top_y     = std::min(top_y,    edges[i].vertex_top.y);
-    has_horizontal_edge = has_horizontal_edge || (edges[i].vertex_delta.y == 0.0f);
-  }
-
-  edge_t* new_edges = new edge_t[3];
-  for (int i = 0; i < 3; i++)
-  {
-    if (has_horizontal_edge)
-      if (edges[i].vertex_delta.y == 0.0f)
-        if (edges[i].vertex_top.y == top_y)
-          new_edges[1] = edges[i];
-        else
-          new_edges[2] = edges[i];
-      else
-        if (new_edges[0].vertex_top.w == 0.0f)
-          new_edges[0] = edges[i];
-        else
-          if (new_edges[1].vertex_top.w == 0.0f)
-            new_edges[1] = edges[i];
-          else
-            new_edges[2] = edges[i];
-    else
-      if (edges[i].vertex_top.y == top_y)
-        if (edges[i].vertex_bottom.y == bottom_y)
-          new_edges[0] = edges[i];
-        else
-          new_edges[1] = edges[i];
-      else
-        new_edges[2] = edges[i];    
-  }
-
-  return new_edges;
-}
-
-interpolating_attr_t Close2GL_Scene::Interpolate(interpolating_attr_t attr_0, interpolating_attr_t attr_1, float min, float max, float value)
-{
-  float alpha = (value - min) / (max - min);
-  interpolating_attr_t result;
-  result.color        = alpha * attr_0.color        + (1.0f - alpha) * attr_1.color;
-  result.ccs_normal   = alpha * attr_0.ccs_normal   + (1.0f - alpha) * attr_1.ccs_normal;
-  result.ccs_position = alpha * attr_0.ccs_position + (1.0f - alpha) * attr_1.ccs_position;
-  result.ww           = alpha * attr_0.ww           + (1.0f - alpha) * attr_1.ww;
-
-  result.flatColor     = attr_0.flatColor;
-  result.flatCcsNormal = attr_1.flatCcsNormal;
-  return result;
-}
-
-void Close2GL_Scene::RasterScanline(scene_state_t state, scanline_t line, glm::mat4 view_matrix)
-{
-  int max_inc = std::ceil(line.vertex_delta.x);
-  int x, y;
-  float z;
-  y = std::round((line.vertex_top.y + line.vertex_bottom.y) / 2.0f);
-  for (int inc_x = 0; inc_x < max_inc; inc_x++)
-  {
-    z = line.vertex_top.z + inc_x * line.inc_z;
-    x = std::round(line.vertex_top.x + inc_x);
-
-    interpolating_attr_t attr = this->Interpolate(line.bottom, line.top, 0, max_inc, inc_x);
-
-    glm::vec4 color;
-    switch (state.shading_mode)
-    {
-      case FLAT_SHADING:
-        color = attr.flatColor;
-        break;
-
-      case PHONG_SHADING:
-      case FLAT_PHONG_SHADING:
-        Shading(state, &attr);
-
-      case GOURAUD_SHADING:
-      case NO_SHADING:
-      default:
-        color = attr.color / attr.ww;
-    }
-    color = glm::pow(color, glm::vec4(1.0)/2.2f);
-
-    this->ChangeBuffer(state, x, y, z, vec4_to_rgba(color));
-  }
-}
-
-void Close2GL_Scene::ChangeBuffer(scene_state_t state, int x, int y, float z, rgba_t color)
-{
-  if (x < 0 || y < 0 || x >= state.screen_width || y >= state.screen_height)
-    return;
-  int index = (state.screen_height - y -1)*state.screen_width+x % this->buffer_size;
-  if (z < this->depth_buffer[index])
-  {
-    this->depth_buffer[index] = z;
-    this->color_buffer[index] = color;
-  }
-}
-
-bool FaceCulling(glm::vec4 *vertices, int face_orientation)
-{
-  glm::vec4 v0 = vertices[0];
-  glm::vec4 v1 = vertices[1];
-  glm::vec4 v2 = vertices[2];
-
-  float a = (v0.x*v1.y - v1.x*v0.y) + (v1.x*v2.y - v2.x*v1.y) + (v2.x*v0.y - v0.x*v2.y);
-
-  return (face_orientation == GL_CW) && (a > 0) || (a < 0);
-}
-
-rgba_t vec4_to_rgba(glm::vec4 vec)
-{
-  rgba_t c;
-  c.r = vec.x;
-  c.g = vec.g;
-  c.b = vec.b;
-  c.a = vec.a;
-  return c;
 }
 
 void PrintTriangle(triangle_t t)

@@ -126,21 +126,28 @@ public:
   void Enable(scene_state_t state);
   void Render(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix);
   void New_Frame();
-
   void SetModel(model_t model);
   void ResizeBuffers(scene_state_t state);
+
+private:
   void TransformModel(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix, glm::mat4 viewport_matrix);
   void Rasterize(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix, glm::mat4 viewport_matrix);
-  edge_t FindEdge(glm::vec4 v0, interpolating_attr_t v0_attr, glm::vec4 v1, interpolating_attr_t v1_attr);
-  scanline_t FindScanline(glm::vec4 v0, interpolating_attr_t v0_attr, glm::vec4 v1, interpolating_attr_t v1_attr);
-  edge_t* OrderEdges(edge_t* edges);
-  interpolating_attr_t Interpolate(interpolating_attr_t attr_0, interpolating_attr_t attr_1, float min, float max, float value);
   void RasterScanline(scene_state_t state, scanline_t line, glm::mat4 view_matrix);
   void ChangeBuffer(scene_state_t state, int x, int y, float z, rgba_t color);
 };
 
-bool FaceCulling(glm::vec4 *vertices, int face_orientation);
 rgba_t vec4_to_rgba(glm::vec4 vec);
+void EraseTriangleWithVertex(std::vector<model_triangle_t> *triangles, int index);
+bool FaceCulling(glm::vec4 *vertices, int face_orientation);
+edge_t FindEdge(glm::vec4 v0, interpolating_attr_t v0_attr, glm::vec4 v1, interpolating_attr_t v1_attr);
+scanline_t FindScanline(glm::vec4 v0, interpolating_attr_t v0_attr, glm::vec4 v1, interpolating_attr_t v1_attr);
+edge_t* OrderEdges(edge_t* edges);
+interpolating_attr_t Interpolate(interpolating_attr_t attr_0, interpolating_attr_t attr_1, float min, float max, float value);
+glm::vec4 AmbientLighting(glm::vec4 color);
+glm::vec4 DiffuseLighting(glm::vec4 color, glm::vec4 ccs_normal, glm::vec4 ccs_position);
+glm::vec4 SpecularLighting(glm::vec4 ccs_normal, glm::vec4 ccs_position);
+glm::vec4 Lighting(scene_state_t state, interpolating_attr_t attr, glm::vec4 normal);
+void Shading(scene_state_t state, interpolating_attr_t *attr);
 
 void PrintTriangle(triangle_t t);
 void PrintEdge(edge_t e);
