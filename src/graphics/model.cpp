@@ -37,19 +37,25 @@ model_t ReadModelFile(const char* filename)
     file >> str >> str >> material.shininess;
     model.materials.push_back(material);
   }
+
+  file >> str >> str >> str;
+  model.has_texture = str == "YES";
   
   getline(file, str); 
   getline(file, str);
   
-  for (int t = 0; t < triangle_count; ++t)
+  for (int a = 0; a < triangle_count; ++a)
   {
     model_triangle_t triangle;
     for (int v = 0; v < 3; ++v)
     {
-      float vx, vy, vz, nx, ny, nz;
+      float vx, vy, vz, nx, ny, nz, s, t;
       int color_index;
-      file >> str >> vx >> vy >> vz >> nx >> ny >> nz >> color_index;
 
+      file >> str >> vx >> vy >> vz >> nx >> ny >> nz >> color_index;
+      if (model.has_texture)
+        file >> s >> t;
+      
       glm::vec4 vertex = glm::vec4(vx, vy, vz, 1.0f);
 
       int index = -1;
@@ -67,6 +73,10 @@ model_t ReadModelFile(const char* filename)
       }
 
       triangle.indices[v] = index;
+
+      if (model.has_texture)
+        triangle.tex_coords[v*2]   = s;
+        triangle.tex_coords[v*2+1] = t;
 
       model.raw_normals.push_back(nx);
       model.raw_normals.push_back(ny);

@@ -65,10 +65,6 @@ struct State_t
   float camera_initial_farplane = 1000.0f;
   float camera_initial_nearplane = 0.1f;
 
-  // int polygon_mode = GL_FILL;
-  // int front_face_mode = GL_CCW;
-
-  // bool backface_culling = true;
   bool look_at = false;
   bool camera_separate_controls = true;
   int camera_control_action = CAMERA_CONTROLS_TRANSLATE;
@@ -77,11 +73,7 @@ struct State_t
 
   char model_filename[512] = "..\\res\\models\\cube.in";
 
-  // int shading_mode = PHONG_SHADING;
-  // bool lights_on = true;
   int use_api = USE_OPENGL;
-
-  // float gui_object_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 } State;
 
 int main( int argc, char* argv[] )
@@ -418,6 +410,7 @@ void GenerateGUI(double dt)
   ImGui::RadioButton("Solid", &g_SceneState.polygon_mode, GL_FILL);
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
+  ImGui::Separator();
   ImGui::Text("Shading");
   ImGui::RadioButton("Flat", &g_SceneState.shading_mode, FLAT_SHADING); ImGui::SameLine();
   ImGui::RadioButton("Gouraud", &g_SceneState.shading_mode, GOURAUD_SHADING);
@@ -431,6 +424,8 @@ void GenerateGUI(double dt)
   ImGui::RadioButton("AD Light", &g_SceneState.lighting_mode, AMBIENT_LIGHT + DIFFUSE_LIGHT);
   ImGui::RadioButton("ADS Light", &g_SceneState.lighting_mode, AMBIENT_LIGHT + DIFFUSE_LIGHT + SPECULAR_LIGHT);
 
+  ImGui::Separator();
+  ImGui::Text("Normals");
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::Checkbox("Backface Culling", &g_SceneState.face_culling);
 
@@ -508,6 +503,7 @@ void GenerateGUI(double dt)
   ImGui::Separator();
   ImGui::Text("Model");
   ImGui::ColorEdit4("Object Color", g_SceneState.gui_object_color);
+  ImGui::Checkbox("Use Texture", &g_SceneState.enable_texture);
 
   ImGui::Dummy(ImVec2(0.0f, 5.0f));
   ImGui::InputText("File Path", State.model_filename, IM_ARRAYSIZE(State.model_filename));

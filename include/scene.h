@@ -25,6 +25,7 @@ typedef struct
   int   lighting_mode = AMBIENT_LIGHT + DIFFUSE_LIGHT + SPECULAR_LIGHT;
   bool  use_calculated_normals = true;
   bool  use_raw_normals = false;
+  bool  enable_texture = false;
 
   float gui_object_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 

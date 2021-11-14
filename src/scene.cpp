@@ -291,6 +291,7 @@ void Close2GL_Scene::TransformModel(scene_state_t state, glm::mat4 view_matrix, 
   glm::vec4 debug_colors[3] = { glm::vec4(1.0, 0.0, 0.0, 1.0), glm::vec4(0.0, 1.0, 0.0, 1.0), glm::vec4(0.0, 0.0, 1.0, 1.0) };
 
   for (model_triangle_t model_triangle : model_triangles) {
+
     triangle_t t;
 
     glm::vec4 v0 = model_vertices[model_triangle.indices[0]];
@@ -338,6 +339,9 @@ void Close2GL_Scene::TransformModel(scene_state_t state, glm::mat4 view_matrix, 
     }
 
     for (int i = 0; i < 3; i++) {
+      if (state.enable_texture && model.has_texture) 
+        color = glm::vec4(model_triangle.tex_coords[2*i], model_triangle.tex_coords[2*i+1], 1.0f, 1.0f);
+
       t.attrs[i].ww = 1.0f / t.vertices[i].w;
 
       t.attrs[i].ccs_position = (glm::inverse(projection_matrix) * t.vertices[i]) * t.attrs[i].ww;

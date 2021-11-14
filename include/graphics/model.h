@@ -22,11 +22,13 @@ typedef struct
   int indices[3];
   glm::vec4 face_normal;
   glm::vec4 calculated_face_normal;
+  float tex_coords[6];
 } model_triangle_t;
 
 typedef struct {
   std::string model_name;
 
+  bool has_texture = false;
   std::vector<model_triangle_t> triangles;
   std::vector<glm::vec4> vertices; // vértices não repetidos
   std::vector<glm::vec4> normals; // normais de cada vértice
