@@ -531,6 +531,7 @@ void GenerateGUI(double dt)
   if (ImGui::Button("Open model"))
     OpenObjectFile();
 
+  ImGui::InputInt("level", &g_SceneState.filter_level);
   ImGui::Dummy(ImVec2(0.0f, 10.0f));
   State.close = ImGui::Button("Close");
 
@@ -589,6 +590,7 @@ void OpenImageFile()
   try {
     g_Texture = ReadTextureFile(State.texture_filename);
     g_OpenGLScene.LoadTextureToScene(g_SceneState, g_Texture);
+    g_Close2GLScene.SetMipmap(GenerateMipmaps(g_Texture));
   
     State.texture_loaded = true;
   } catch ( std::exception& e ) {

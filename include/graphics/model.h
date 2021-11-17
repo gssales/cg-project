@@ -22,7 +22,7 @@ typedef struct
   int indices[3];
   glm::vec4 face_normal;
   glm::vec4 calculated_face_normal;
-  float tex_coords[6];
+  double tex_coords[6];
 } model_triangle_t;
 
 typedef struct {

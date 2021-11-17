@@ -28,6 +28,7 @@ typedef struct
   bool  use_raw_normals = false;
   bool  enable_texture = false;
   int   texture_filter = GL_NEAREST;
+  int   filter_level = 0;
 
   float gui_object_color[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 
@@ -49,7 +50,16 @@ typedef struct
   glm::vec4 ccs_position;
   glm::vec4 ccs_normal;
   glm::vec4 color;
+  glm::vec2 texture_coords;
   float ww = 1.0;
+
+  glm::vec4 vColorAmbient;
+  glm::vec4 vColorDiffuse;
+  glm::vec4 vColorSpecular;
+
+  glm::vec4 flatColorAmbient;
+  glm::vec4 flatColorDiffuse;
+  glm::vec4 flatColorSpecular;
 
   glm::vec4 flatColor; // this attribute is not being interpolated
   glm::vec4 flatCcsNormal; // this attribute is not being interpolated
@@ -127,11 +137,15 @@ public:
   rgba_t *color_buffer;
   float  *depth_buffer;
 
+  texture_t *mipmaps;
+  glm::vec2 delta_tex;
+
   void LoadTrianglesToScene();
   void Enable(scene_state_t state);
   void Render(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix);
   void New_Frame();
   void SetModel(model_t model);
+  void SetMipmap(texture_t *mipmaps);
   void ResizeBuffers(scene_state_t state);
 
 private:
@@ -139,6 +153,11 @@ private:
   void Rasterize(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix, glm::mat4 viewport_matrix);
   void RasterScanline(scene_state_t state, scanline_t line, glm::mat4 view_matrix);
   void ChangeBuffer(scene_state_t state, int x, int y, float z, rgba_t color);
+  glm::vec4 ProcessFragment(scene_state_t state, interpolating_attr_t *attr, int x, int y, interpolating_attr_t flatAttr);
+  glm::vec4 GetTextureColor(scene_state_t state, glm::vec2 texture_coord, glm::vec2 delta_tex);
+  glm::vec4 Nearest(glm::vec2 texture_coord, int level);
+  glm::vec4 Bilinear(glm::vec2 texture_coord, int level);
+  glm::vec4 Trilinear(glm::vec2 texture_coord, glm::vec2 delta_tex);
 };
 
 rgba_t vec4_to_rgba(glm::vec4 vec);
@@ -152,6 +171,7 @@ glm::vec4 AmbientLighting(glm::vec4 color);
 glm::vec4 DiffuseLighting(glm::vec4 color, glm::vec4 ccs_normal, glm::vec4 ccs_position);
 glm::vec4 SpecularLighting(glm::vec4 ccs_normal, glm::vec4 ccs_position);
 glm::vec4 Lighting(scene_state_t state, interpolating_attr_t attr, glm::vec4 normal);
+glm::vec4 LightingWithTextureMapping(scene_state_t state, interpolating_attr_t attr, glm::vec4 color, glm::vec4 normal);
 void Shading(scene_state_t state, interpolating_attr_t *attr);
 
 void PrintTriangle(triangle_t t);

@@ -16,7 +16,7 @@ void SuperScene::DrawScene()
 
 void OpenGL_Scene::LoadModelToScene(scene_state_t state, model_t model)
 {
-  if (this->vao_id) {
+  if (!this->vao_id) {
     GLuint bufs[3] = { this->vbo_model_id, this->vbo_normal_id, this->vbo_surface_normal_id };
     glDeleteBuffers(3, bufs);
     glDeleteVertexArrays(1, &this->vao_id);
@@ -270,6 +270,11 @@ void Close2GL_Scene::SetModel(model_t model)
   this->model = model;
 }
 
+void Close2GL_Scene::SetMipmap(texture_t *mipmaps)
+{
+  this->mipmaps = mipmaps;
+}
+
 void Close2GL_Scene::ResizeBuffers(scene_state_t state)
 {
   delete[] this->color_buffer;
@@ -382,6 +387,10 @@ void Close2GL_Scene::TransformModel(scene_state_t state, glm::mat4 view_matrix, 
       t.attrs[i].ccs_position = (glm::inverse(projection_matrix) * t.vertices[i]) * t.attrs[i].ww;
       t.attrs[i].ccs_normal = (view_matrix * model_matrix * t.normals[i]) * t.attrs[i].ww;
 
+      t.attrs[i].texture_coords.x = model_triangle.tex_coords[2*i];
+      t.attrs[i].texture_coords.y = model_triangle.tex_coords[2*i+1];
+      t.attrs[i].texture_coords *= t.attrs[i].ww;
+
       glm::vec4 c = state.debug_colors ? debug_colors[i] : color;
       t.attrs[i].color = c * t.attrs[i].ww; 
       t.attrs[i].flatColor = c;
@@ -390,6 +399,139 @@ void Close2GL_Scene::TransformModel(scene_state_t state, glm::mat4 view_matrix, 
 
     this->triangles.push_back(t);
   }
+}
+
+glm::vec4 Close2GL_Scene::Nearest(glm::vec2 texture_coord, int level)
+{
+  int size = this->mipmaps[level].width;
+  glm::vec2 coord = texture_coord * (float)size;
+  int s = (int)std::round(coord.x) % size;
+  int t = (int)std::round(coord.y) % size;
+  int index = t * size + s;
+  uint8_t* pixel = this->mipmaps[level].data + index * 4;
+  return glm::vec4(pixel[0], pixel[1], pixel[2], pixel[3]) / 256.0f;
+}
+
+glm::vec4 Close2GL_Scene::Bilinear(glm::vec2 texture_coord, int level)
+{
+  int size = this->mipmaps[level].width;
+  glm::vec2 coord = texture_coord * (float)size;
+
+  int s = (int)std::floor(coord.x) % size;
+  int t = (int)std::floor(coord.y) % size;
+
+  glm::vec4 color00 = this->Nearest(glm::vec2(s,   t)   / (float)size, level);
+  glm::vec4 color01 = this->Nearest(glm::vec2(s,   t+1) / (float)size, level);
+  glm::vec4 color10 = this->Nearest(glm::vec2(s+1, t)   / (float)size, level);
+  glm::vec4 color11 = this->Nearest(glm::vec2(s+1, t+1) / (float)size, level);
+
+  float dt = coord.x - s;
+  float ds = coord.y - t;
+
+  glm::vec4 color_last  = ds * color01 + (1.0f -ds) * color00;
+  glm::vec4 color_first = ds * color11 + (1.0f -ds) * color10;
+
+  return dt * color_first + (1.0f - dt) * color_last;
+}
+
+glm::vec4 Close2GL_Scene::Trilinear(glm::vec2 texture_coord, glm::vec2 delta_tex)
+{
+  int size = this->mipmaps[0].width;
+
+  float level = (float) (std::log(std::max((delta_tex.x*size), (delta_tex.y*size))) / std::log(2.0));
+
+  glm::vec4 color;
+  if (level <= 0.0f || std::isnan(level))
+  {
+    color = this->Bilinear(texture_coord, 0);
+  } else {
+    int floor_level = std::floor(level);
+    int ceil_level = std::ceil(level);
+    float alpha = level - floor_level;
+    glm::vec4 floor_color = this->Bilinear(texture_coord, floor_level);
+    glm::vec4 ceil_color = this->Bilinear(texture_coord, ceil_level);
+    color = alpha * ceil_color + (1.0f-alpha) * floor_color;
+  }
+
+  return color;
+}
+
+glm::vec4 Close2GL_Scene::GetTextureColor(scene_state_t state, glm::vec2 texture_coord, glm::vec2 delta_tex)
+{
+  glm::vec4 color;
+  switch (state.texture_filter)
+  {
+    case GL_LINEAR:
+      color = this->Bilinear(texture_coord, 0);
+      break;
+
+    case GL_LINEAR_MIPMAP_LINEAR:
+      color = this->Trilinear(texture_coord, delta_tex);
+      break;
+
+    case GL_NEAREST:
+    default:
+      color = this->Nearest(texture_coord, state.filter_level);
+  }
+  return color;
+}
+
+glm::vec4 WalkEdge(edge_t edge, int incr)
+{
+  glm::vec4 step = edge.vertex_top;
+  step.y = step.y + incr;
+  step.x = step.x + incr * edge.inc_x;
+  step.x = glm::clamp(step.x, edge.min_x, edge.max_x);
+  step.z = step.z + incr * edge.inc_z;
+  return step;
+}
+
+glm::vec4 Close2GL_Scene::ProcessFragment(scene_state_t state, interpolating_attr_t *attr, int x, int y, interpolating_attr_t flatAttr)
+{
+  glm::vec4 color;
+  if (state.enable_texture && model.has_texture && !std::isnan(this->delta_tex.x / attr->ww))
+  {
+    color = this->GetTextureColor(state, attr->texture_coords / attr->ww, this->delta_tex / attr->ww);
+    switch (state.shading_mode)
+    {
+      case FLAT_SHADING:
+        color = color * (flatAttr.flatColorAmbient) 
+            + color * (flatAttr.flatColorDiffuse) 
+            + (flatAttr.flatColorSpecular);
+        break;
+        
+      case PHONG_SHADING:
+        color = LightingWithTextureMapping(state, *attr, color, attr->ccs_normal/attr->ww);
+        break;
+
+      case FLAT_PHONG_SHADING:
+        color = LightingWithTextureMapping(state, *attr, color, flatAttr.flatCcsNormal);
+        break;
+        
+      case GOURAUD_SHADING:
+        color = color * (attr->vColorAmbient/attr->ww) 
+            + color * (attr->vColorDiffuse/attr->ww) 
+            + (attr->vColorSpecular/attr->ww);
+        break;
+    }
+  }
+  else
+    switch (state.shading_mode)
+    {
+      case FLAT_SHADING:
+        color = flatAttr.flatColor;
+        break;
+
+      case PHONG_SHADING:
+      case FLAT_PHONG_SHADING:
+        Shading(state, attr);
+
+      case GOURAUD_SHADING:
+      case NO_SHADING:
+      default:
+        color = attr->color / attr->ww;
+    }
+  return glm::pow(color, glm::vec4(1.0)/2.2f);
 }
 
 void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 view_matrix, glm::mat4 projection_matrix, glm::mat4 viewport_matrix)
@@ -402,6 +544,64 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 view_matrix, glm::
       if (state.shading_mode == FLAT_SHADING) {
         t.attrs[a].flatColor = t.attrs[0].flatColor;
         t.attrs[a].flatCcsNormal = t.attrs[0].flatCcsNormal;
+      }
+      if (state.enable_texture && this->model.has_texture) {
+        if (state.shading_mode == FLAT_SHADING) {
+          int lighting = state.lighting_mode;
+          glm::vec4 specular_term = glm::vec4(0.0,0.0,0.0,1.0);
+          if (lighting >= SPECULAR_LIGHT) {
+            lighting -= SPECULAR_LIGHT;
+            specular_term = SpecularLighting(
+                t.attrs[0].flatCcsNormal, 
+                t.attrs[a].ccs_position / t.attrs[a].ww);
+          }
+
+          glm::vec4 diffuse_term = glm::vec4(0.0,0.0,0.0,1.0);
+          if (lighting >= DIFFUSE_LIGHT) {
+            lighting -= DIFFUSE_LIGHT;
+            diffuse_term = DiffuseLighting(glm::vec4(1.0,1.0,1.0,1.0), 
+                t.attrs[0].flatCcsNormal,
+                t.attrs[a].ccs_position / t.attrs[a].ww);
+          }
+          
+          glm::vec4 ambient_term = glm::vec4(0.0,0.0,0.0,1.0);
+          if (lighting >= AMBIENT_LIGHT) {
+            lighting -= AMBIENT_LIGHT;
+            ambient_term = glm::vec4(0.2, 0.2, 0.2, 1.0);
+          }
+
+          t.attrs[a].flatColorAmbient = ambient_term;
+          t.attrs[a].flatColorDiffuse = diffuse_term;
+          t.attrs[a].flatColorSpecular = specular_term;
+        }
+        if (state.shading_mode == GOURAUD_SHADING) {
+          int lighting = state.lighting_mode;
+          glm::vec4 specular_term = glm::vec4(0.0);
+          if (lighting >= SPECULAR_LIGHT) {
+            lighting -= SPECULAR_LIGHT;
+            specular_term = SpecularLighting(
+                t.attrs[a].ccs_normal / t.attrs[a].ww, 
+                t.attrs[a].ccs_position / t.attrs[a].ww);
+          }
+
+          glm::vec4 diffuse_term = glm::vec4(0.0);
+          if (lighting >= DIFFUSE_LIGHT) {
+            lighting -= DIFFUSE_LIGHT;
+            diffuse_term = DiffuseLighting(glm::vec4(1.0), 
+                t.attrs[a].ccs_normal / t.attrs[a].ww,
+                t.attrs[a].ccs_position / t.attrs[a].ww);
+          }
+          
+          glm::vec4 ambient_term = glm::vec4(0.0);
+          if (lighting >= AMBIENT_LIGHT) {
+            lighting -= AMBIENT_LIGHT;
+            ambient_term = glm::vec4(0.2);
+          }
+
+          t.attrs[a].vColorAmbient = ambient_term * t.attrs[a].ww;
+          t.attrs[a].vColorDiffuse = diffuse_term * t.attrs[a].ww;
+          t.attrs[a].vColorSpecular = specular_term * t.attrs[a].ww;
+        }
       }
     }
 
@@ -419,52 +619,35 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 view_matrix, glm::
     int active_edge = 1;
     int max_inc = std::round(edges[0].vertex_delta.y);
 
-    int y, x;    
+    int y, x;
     glm::vec4 p_a, p_b;
     interpolating_attr_t attr_a, attr_b;
     for (int inc_y = 0; inc_y < max_inc; inc_y++)
     {
-      int inc = inc_y;
+      int inc0 = inc_y;
+      int inc1 = inc_y;  
+      if (active_edge == 2)
+        inc1 -= edges[1].vertex_delta.y;
+
+      p_a = WalkEdge(edges[0], inc0);
+      p_b = WalkEdge(edges[active_edge], inc1);
+      attr_a = Interpolate(edges[0].bottom, edges[0].top, 0, max_inc, inc0);
+      attr_b = Interpolate(edges[active_edge].bottom, edges[active_edge].top, 0, edges[active_edge].vertex_delta.y, inc1);
+
+      this->delta_tex = (attr_b.texture_coords - attr_a.texture_coords);
+      if (std::abs(p_b.x - p_a.x) > 0.0)
+        this->delta_tex /= std::abs(p_b.x - p_a.x);
+      this->delta_tex.x = std::abs(this->delta_tex.x);
+      this->delta_tex.y = std::abs(this->delta_tex.y);
 
       // ARESTA PRINCIPAL
-      p_a = edges[0].vertex_top;
-      p_a.y = p_a.y + inc;
-      p_a.x = p_a.x + inc * edges[0].inc_x;
-      p_a.z = p_a.z + inc * edges[0].inc_z;
       y = std::round(p_a.y);
       x = std::round(p_a.x);
-      
-      attr_a = Interpolate(edges[0].bottom, edges[0].top, 0, max_inc, inc);
-
-      glm::vec4 color;
-      switch (state.shading_mode)
-      {
-        case FLAT_SHADING:
-          color = t.attrs[0].flatColor;
-          break;
-
-        case PHONG_SHADING:
-        case FLAT_PHONG_SHADING:
-          Shading(state, &attr_a);
-
-        case GOURAUD_SHADING:
-        case NO_SHADING:
-        default:
-          color = attr_a.color / attr_a.ww;
-      }
-      color = glm::pow(color, glm::vec4(1.0)/2.2f);
-
+    
+      glm::vec4 color = this->ProcessFragment(state, &attr_a, x, y, t.attrs[0]);
       this->ChangeBuffer(state, x, y, p_a.z, vec4_to_rgba(color));
 
       // ARESTA SECUNDÁRIA
-      
-      if (active_edge == 2)
-        inc -= edges[1].vertex_delta.y;
-
-      p_b = edges[active_edge].vertex_top;
-      p_b.y = p_b.y + inc;
-      p_b.x = glm::clamp(p_b.x + inc * edges[active_edge].inc_x, edges[active_edge].min_x, edges[active_edge].max_x);
-      p_b.z = p_b.z + inc * edges[active_edge].inc_z;
       y = std::round(p_b.y);
       x = std::round(p_b.x);
 
@@ -476,25 +659,7 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 view_matrix, glm::
         this->RasterScanline(state, sl, view_matrix);
       }
 
-      attr_b = Interpolate(edges[active_edge].bottom, edges[active_edge].top, 0, edges[active_edge].vertex_delta.y, inc);
-
-      switch (state.shading_mode)
-      {
-        case FLAT_SHADING:
-          color = t.attrs[0].flatColor;
-          break;
-
-        case PHONG_SHADING:
-        case FLAT_PHONG_SHADING:
-          Shading(state, &attr_b);
-
-        case GOURAUD_SHADING:
-        case NO_SHADING:
-        default:
-          color = attr_b.color / attr_b.ww;
-      }
-      color = glm::pow(color, glm::vec4(1.0)/2.2f);
-      
+      color = this->ProcessFragment(state, &attr_b, x, y, t.attrs[0]);
       this->ChangeBuffer(state, x, y, p_b.z, vec4_to_rgba(color));
       
       // PREENCHIMENTO
@@ -503,7 +668,7 @@ void Close2GL_Scene::Rasterize(scene_state_t state, glm::mat4 view_matrix, glm::
         float my = (p_a.y + p_b.y) / 2.0f;
         p_a.y = my;
         p_b.y = my;
-        scanline_t sl = FindScanline(glm::make_vec4(p_a), attr_a, glm::make_vec4(p_b), attr_b);
+        scanline_t sl = FindScanline(p_a, attr_a, p_b, attr_b);
         this->RasterScanline(state, sl, view_matrix);
       }
 
@@ -527,22 +692,7 @@ void Close2GL_Scene::RasterScanline(scene_state_t state, scanline_t line, glm::m
     interpolating_attr_t attr = Interpolate(line.bottom, line.top, 0, max_inc, inc_x);
 
     glm::vec4 color;
-    switch (state.shading_mode)
-    {
-      case FLAT_SHADING:
-        color = attr.flatColor;
-        break;
-
-      case PHONG_SHADING:
-      case FLAT_PHONG_SHADING:
-        Shading(state, &attr);
-
-      case GOURAUD_SHADING:
-      case NO_SHADING:
-      default:
-        color = attr.color / attr.ww;
-    }
-    color = glm::pow(color, glm::vec4(1.0)/2.2f);
+    color = this->ProcessFragment(state, &attr, x, y, attr);
 
     this->ChangeBuffer(state, x, y, z, vec4_to_rgba(color));
   }
@@ -705,10 +855,15 @@ interpolating_attr_t Interpolate(interpolating_attr_t attr_0, interpolating_attr
   result.color        = alpha * attr_0.color        + (1.0f - alpha) * attr_1.color;
   result.ccs_normal   = alpha * attr_0.ccs_normal   + (1.0f - alpha) * attr_1.ccs_normal;
   result.ccs_position = alpha * attr_0.ccs_position + (1.0f - alpha) * attr_1.ccs_position;
+  result.texture_coords = alpha * attr_0.texture_coords + (1.0f - alpha) * attr_1.texture_coords;
   result.ww           = alpha * attr_0.ww           + (1.0f - alpha) * attr_1.ww;
 
+  result.vColorAmbient = alpha * attr_0.vColorAmbient + (1.0f - alpha) * attr_1.vColorAmbient;
+  result.vColorDiffuse = alpha * attr_0.vColorDiffuse + (1.0f - alpha) * attr_1.vColorDiffuse;
+  result.vColorSpecular = alpha * attr_0.vColorSpecular + (1.0f - alpha) * attr_1.vColorSpecular;
+
   result.flatColor     = attr_0.flatColor;
-  result.flatCcsNormal = attr_1.flatCcsNormal;
+  result.flatCcsNormal = attr_0.flatCcsNormal;
   return result;
 }
 
@@ -735,7 +890,7 @@ glm::vec4 SpecularLighting(glm::vec4 ccs_normal, glm::vec4 ccs_position)
   float q = 120.0;
   glm::vec4 r = glm::normalize(2.0f * n * glm::dot(l,n) -l);
   glm::vec4 h = glm::normalize(v + l);
-  return glm::vec4(0.5) * std::pow(std::max(0.0f, glm::dot(h, r)), q);
+  return glm::vec4(0.5,0.5,0.5,1.0) * std::pow(std::max(0.0f, glm::dot(h, r)), q);
 }
 
 glm::vec4 Lighting(scene_state_t state, interpolating_attr_t attr, glm::vec4 normal)
@@ -743,24 +898,53 @@ glm::vec4 Lighting(scene_state_t state, interpolating_attr_t attr, glm::vec4 nor
   int lighting = state.lighting_mode;
 
   int count_terms = 0;
-  glm::vec4 specular_term = glm::vec4(0.0);
+  glm::vec4 specular_term = glm::vec4(0.0,0.0,0.0,1.0);
   if (lighting >= SPECULAR_LIGHT) {
     lighting -= SPECULAR_LIGHT;
     specular_term = SpecularLighting(normal, attr.ccs_position);
     count_terms++;
   }
 
-  glm::vec4 diffuse_term = glm::vec4(0.0);
+  glm::vec4 diffuse_term = glm::vec4(0.0,0.0,0.0,1.0);
   if (lighting >= DIFFUSE_LIGHT) {
     lighting -= DIFFUSE_LIGHT;
     diffuse_term = DiffuseLighting(attr.color, normal, attr.ccs_position);
     count_terms++;
   }
   
-  glm::vec4 ambient_term = glm::vec4(0.0);
+  glm::vec4 ambient_term = glm::vec4(0.0,0.0,0.0,1.0);
   if (lighting >= AMBIENT_LIGHT) {
     lighting -= AMBIENT_LIGHT;
     ambient_term = AmbientLighting(attr.color);
+    count_terms++;
+  }
+
+  return ambient_term + diffuse_term + specular_term;
+}
+
+glm::vec4 LightingWithTextureMapping(scene_state_t state, interpolating_attr_t attr, glm::vec4 color, glm::vec4 normal)
+{
+  int lighting = state.lighting_mode;
+
+  int count_terms = 0;
+  glm::vec4 specular_term = glm::vec4(0.0,0.0,0.0,1.0);
+  if (lighting >= SPECULAR_LIGHT) {
+    lighting -= SPECULAR_LIGHT;
+    specular_term = SpecularLighting(normal, attr.ccs_position);
+    count_terms++;
+  }
+
+  glm::vec4 diffuse_term = glm::vec4(0.0,0.0,0.0,1.0);
+  if (lighting >= DIFFUSE_LIGHT) {
+    lighting -= DIFFUSE_LIGHT;
+    diffuse_term = DiffuseLighting(color, normal, attr.ccs_position);
+    count_terms++;
+  }
+  
+  glm::vec4 ambient_term = glm::vec4(0.0,0.0,0.0,1.0);
+  if (lighting >= AMBIENT_LIGHT) {
+    lighting -= AMBIENT_LIGHT;
+    ambient_term = AmbientLighting(color);
     count_terms++;
   }
 
